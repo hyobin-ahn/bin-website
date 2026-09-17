@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test ical.js</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ical.js/1.5.0/ical.min.js"></script>
+</head>
+<body>
+    <div id="output"></div>
+    <script>
+        async function runTest() {
+            try {
+                const response = await fetch('hb1392@gmail.com.ics');
+                const text = await response.text();
+                const jcalData = ICAL.parse(text);
+                const comp = new ICAL.Component(jcalData);
+                const vevents = comp.getAllSubcomponents('vevent');
+                
+                let todayEvents = 0;
+                
+                const now = new Date(2026, 8, 17); // 2026-09-17
+                const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const todayEnd = new Date(todayStart);
+                todayEnd.setDate(todayEnd.getDate() + 1);
+
+                const todayStartIcal = ICAL.Time.fromJSDate(todayStart, true);
+                const todayEndIcal = ICAL.Time.fromJSDate(todayEnd, true);
+
+                let outputHtml = 'Total vevents: ' + vevents.length + '<br/>';
+                
+                vevents.forEach(vevent => {
+                    const event = new ICAL.Event(vevent);
+                    if (event.isRecurring()) {
+                        const iter = event.iterator();
+                        let next;
+                        // Limit to 1000 iterations to avoid infinite loops on weird rules
+                        let i = 0;
+                        while ((next = iter.next()) && i < 1000) {
+                            i++;
+                            if (next.compare(todayStartIcal) >= 0 && next.compare(todayEndIcal) < 0) {
+                                todayEvents++;
+                                outputHtml += 'Recurring Event found today: ' + event.summary + ' at ' + next.toJSDate() + '<br/>';
+                            }
+                            if (next.compare(todayEndIcal) >= 0) break;
+                        }
+                    } else {
+                        const start = event.startDate;
+                        if (start && start.compare(todayStartIcal) >= 0 && start.compare(todayEndIcal) < 0) {
+                            todayEvents++;
+                            outputHtml += 'Event found today: ' + event.summary + ' at ' + start.toJSDate() + '<br/>';
+                        }
+                    }
+                });
+                outputHtml += 'Total events today: ' + todayEvents;
+                document.getElementById('output').innerHTML = outputHtml;
+            } catch (e) {
+                document.getElementById('output').innerHTML = 'Error: ' + e.message;
+            }
+        }
+        runTest();
+    </script>
+</body>
+</html>
