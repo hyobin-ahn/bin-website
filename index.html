@@ -18,12 +18,32 @@
     <div class="container">
         <header class="header">
             <div class="logo-container">
-                <a href="https://www-legacy.sdu.ac.kr/login/login.asp?MENU_ID=1690&CONTENTS_NO=1" target="_blank" style="text-decoration: none;">
-                    <span style="font-weight: 700; font-size: 1.8rem; color: #fff;">SDU</span>
+                <a href="https://www-legacy.sdu.ac.kr/login/login.asp?MENU_ID=1690&CONTENTS_NO=1" target="_blank" title="SDU 로그인">
+                    SDU
                 </a>
             </div>
-            <div class="weather-container">
-                <div class="weather-item" id="weather-paju">파주: 날씨 불러오는 중...</div>
+            
+            <div class="header-weather-widget">
+                <div class="hww-loc" id="weather-location">고양시 덕이동</div>
+                <div class="hww-info">
+                    <div class="hww-temp">
+                        <span class="weather-temp">--°</span>
+                    </div>
+                    <div class="hww-subinfo">
+                        <div class="hww-desc-hl">
+                            <span class="weather-desc">--</span>
+                            <span class="weather-highlow"><span class="w-low">--°</span> / <span class="w-high">--°</span></span>
+                        </div>
+                        <div class="weather-dust">미세 -- · 초미세 --</div>
+                    </div>
+                </div>
+                
+                <div class="hww-chart-area">
+                    <div class="chart-container">
+                        <canvas id="weatherMiniChart"></canvas>
+                    </div>
+                    <div class="weather-forecast-row"></div>
+                </div>
             </div>
         </header>
 
@@ -31,7 +51,8 @@
             <div class="search-container" style="flex-direction: column; align-items: center; gap: 16px; padding: 30px 0;">
                 <!-- Google Search -->
                 <form action="https://www.google.com/search" method="get" class="search-form" style="position: relative;">
-                    <input type="text" name="q" class="search-input" placeholder="Google 검색" required autofocus autocomplete="off" style="padding-right: 90px;">
+                    <svg style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); z-index: 1;" viewBox="0 0 24 24" width="22" height="22" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                    <input type="text" name="q" class="search-input" placeholder="" required autofocus autocomplete="off" style="padding-left: 48px; padding-right: 90px;">
                     <div style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px;">
                         <button type="submit" class="search-btn" title="Google 검색" style="position: static; transform: none; background: transparent;">
                             <svg focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor"></path></svg>
@@ -78,12 +99,15 @@
                         </button>
                     </div>
                 </form>
+                </form>
             </div>
+
+
 
             <div class="calendar-container">
                 <div class="calendar-header">
-                    <h2>오늘의 일정 (Google Calendar)</h2>
-                    <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" class="btn-primary">웹 캘린더 열기</a>
+                    <h2>일정</h2>
+                    <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" class="btn-primary">캘린더</a>
                 </div>
                 <div id="events-list" class="events-list">
                     <p class="loading">일정을 불러오는 중입니다... (로컬 서버 환경 필요)</p>
@@ -91,25 +115,17 @@
             </div>
 
             <section class="stocks-section">
-                <div class="stocks-header">
-                    <h3 class="section-title">오늘의 주식 흐름</h3>
-                    <div class="timeframe-buttons">
-                        <button class="timeframe-btn active" data-period="today">오늘</button>
-                        <button class="timeframe-btn" data-period="7">1주일</button>
-                        <button class="timeframe-btn" data-period="30">1개월</button>
-                        <button class="timeframe-btn" data-period="90">3개월</button>
-                        <button class="timeframe-btn" data-period="180">6개월</button>
-                        <button class="timeframe-btn" data-period="270">9개월</button>
-                        <button class="timeframe-btn" data-period="365">1년</button>
-                    </div>
-                </div>
                 
-                <div class="kospi-container" id="kospi-container" style="margin-bottom: 20px;">
+                <div class="kospi-container" id="kospi-container" style="margin-bottom: 5px;">
                     <!-- KOSPI will be injected here -->
                     <div style="text-align:center; color: var(--text-secondary); padding: 10px;">코스피 정보 불러오는 중...</div>
                 </div>
                 
-                <div class="stocks-grid" id="stocks-grid">
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <button onclick="toggleStocks()" id="stocks-toggle-btn" class="nav-btn toggle-btn" title="접기/펼치기"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                </div>
+                
+                <div class="stocks-grid" id="stocks-grid" style="display: none;">
                     <!-- Stock cards will be injected here -->
                     <div style="text-align:center; color: var(--text-secondary); padding: 20px; grid-column: 1 / -1;">주식 데이터 불러오는 중...</div>
                 </div>
@@ -118,8 +134,9 @@
             <section class="philosophy-section">
                 <div class="section-header-flex">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 class="section-title" style="margin: 0;">오늘의 들뢰즈</h3>
+                        <h3 class="section-title" style="margin: 0;">들뢰즈</h3>
                         <div style="display: flex; gap: 4px;">
+                            <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">1.00x</button>
                             <button class="tts-btn" onclick="toggleTTS('philosophy')" id="tts-btn-philosophy" title="읽기/정지">🔊</button>
                             <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-philosophy" title="일시정지/재개" style="display: none;">⏸️</button>
                         </div>
@@ -144,8 +161,9 @@
                 <div class="iching-container">
                     <div class="section-header-flex">
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <h3 class="section-title" style="margin: 0;">오늘의 주역</h3>
+                            <h3 class="section-title" style="margin: 0;">주역</h3>
                             <div style="display: flex; gap: 4px;">
+                                <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">1.00x</button>
                                 <button class="tts-btn" onclick="toggleTTS('iching')" id="tts-btn-iching" title="읽기/정지">🔊</button>
                                 <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-iching" title="일시정지/재개" style="display: none;">⏸️</button>
                             </div>
@@ -166,28 +184,25 @@
                 <div class="saju-container">
                     <div class="section-header-flex">
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <h3 class="section-title" style="margin: 0;">오늘의 사주</h3>
-                            <div style="display: flex; gap: 4px;">
-                                <button class="tts-btn" onclick="toggleTTS('saju')" id="tts-btn-saju" title="읽기/정지">🔊</button>
-                                <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-saju" title="일시정지/재개" style="display: none;">⏸️</button>
-                            </div>
+                            <h3 class="section-title" style="margin: 0;">명리</h3>
                         </div>
                     </div>
                     <div class="saju-form" style="margin-bottom: 20px; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; font-size: 0.9rem;">
                         <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                            <input type="number" id="saju-year" placeholder="년" style="width: 60px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="1970">
-                            <input type="number" id="saju-month" placeholder="월" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="1">
-                            <input type="number" id="saju-day" placeholder="일" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="30">
-                            <input type="number" id="saju-hour" placeholder="시" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="6">
-                            <select id="saju-calendar" style="padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;">
+                            <input type="number" id="saju-year" placeholder="년" style="width: 60px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="1970" onchange="initSaju(0)">
+                            <input type="number" id="saju-month" placeholder="월" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="1" onchange="initSaju(0)">
+                            <input type="number" id="saju-day" placeholder="일" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="30" onchange="initSaju(0)">
+                            <input type="number" id="saju-hour" placeholder="시" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" value="6" onchange="initSaju(0)">
+                            <select id="saju-calendar" style="padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" onchange="initSaju(0)">
                                 <option value="solar">양력</option>
                                 <option value="lunar">음력</option>
                             </select>
-                            <select id="saju-gender" style="padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;">
+                            <select id="saju-gender" style="padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" onchange="initSaju(0)">
                                 <option value="M">남</option>
                                 <option value="F">여</option>
                             </select>
-                            <button onclick="calculateSaju()" class="btn-saju" title="풀이 보기">풀이 보기</button>
+                            <button onclick="initSaju(0)" class="nav-btn" style="padding: 4px 12px; font-size: 0.85rem; background: rgba(99,179,237,0.15); border: 1px solid rgba(99,179,237,0.4); color: var(--text-color); border-radius: 4px; cursor: pointer; white-space: nowrap;" title="입력한 날짜로 사주 계산">확인</button>
+                            <button onclick="calculateSaju()" id="saju-toggle-btn" class="nav-btn toggle-btn" title="명리 풀이 접기/펼치기"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
                         </div>
                     </div>
                     <div id="saju-content" class="saju-content">
@@ -199,8 +214,8 @@
     </div>
 
     <!-- Data and Scripts -->
-    <script src="philosophy_data.js?v=20260917_13"></script>
+    <script src="philosophy_data.js?v=20260918_01"></script>
     <script src="iching_data.js?v=20260917_14"></script>
-    <script src="script.js?v=20260917_18"></script>
+    <script src="script.js?v=20260918_01"></script>
 </body>
 </html>

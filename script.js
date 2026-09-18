@@ -46,64 +46,185 @@ const WMO_CODES = {
     80: '소나기', 95: '뇌우', 96: '뇌우/우박', 99: '뇌우/우박'
 };
 
-async function fetchWeather(locKey, elementId, name) {
-    const el = document.getElementById(elementId);
+async function updateWeatherWidget() {
     try {
-        const { lat, lon } = LOCATIONS[locKey];
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FSeoul`;
+        // Fallback: Goyang-si Deogi-dong coords (approx)
+        let lat = 37.6970;
+        let lon = 126.7380;
+        let locName = "고양시 덕이동";
+        
+        // Attempt to get user's current location
+        if (navigator.geolocation) {
+            try {
+                const pos = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000, maximumAge: 60000 });
+                });
+                lat = pos.coords.latitude;
+                lon = pos.coords.longitude;
+                
+                try {
+                    const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=14&addressdetails=1&accept-language=ko`);
+                    const geoData = await geoRes.json();
+                    if (geoData && geoData.address) {
+                        const addr = geoData.address;
+                        const city = addr.city || addr.province || addr.county || '';
+                        const neighborhood = addr.suburb || addr.borough || addr.village || addr.town || '';
+                        locName = `${city} ${neighborhood}`.trim();
+                    }
+                } catch(e) {
+                    console.log("Reverse geocoding failed", e);
+                }
+            } catch (e) {
+                console.log("위치 정보를 가져올 수 없어 기본 지역을 사용합니다.", e);
+            }
+        }
+        
+        const locEl = document.getElementById('weather-location');
+        if (locEl) locEl.textContent = locName || "현재 위치";
+        
+        // Fetch current, daily min/max, and hourly temp/weathercode
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FSeoul`;
         const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5&timezone=Asia%2FSeoul`;
         
-        const [weatherRes, aqiRes] = await Promise.all([
-            fetch(weatherUrl),
-            fetch(aqiUrl)
-        ]);
-        
-        if (!weatherRes.ok || !aqiRes.ok) throw new Error('Network response was not ok');
-        
+        const [weatherRes, aqiRes] = await Promise.all([fetch(weatherUrl), fetch(aqiUrl)]);
         const weatherData = await weatherRes.json();
         const aqiData = await aqiRes.json();
         
-        const temp = weatherData.current_weather.temperature;
-        const code = weatherData.current_weather.weathercode;
+        const current = weatherData.current_weather;
+        const temp = current.temperature;
+        const code = current.weathercode;
         const desc = WMO_CODES[code] || '알 수 없음';
         
-        const maxTemp = weatherData.daily.temperature_2m_max[0];
-        const minTemp = weatherData.daily.temperature_2m_min[0];
+        const maxTemp = Math.round(weatherData.daily.temperature_2m_max[0]);
+        const minTemp = Math.round(weatherData.daily.temperature_2m_min[0]);
         
         const pm10 = aqiData.current.pm10;
         const pm25 = aqiData.current.pm2_5;
         
         const getAqiDesc = (val, isPm25) => {
+            let status = '';
+            let color = '';
             if (isPm25) {
-                if (val <= 15) return '좋음';
-                if (val <= 35) return '보통';
-                if (val <= 75) return '나쁨';
-                return '매우나쁨';
+                if (val <= 15) { status = '좋음'; color = '#4fc3f7'; }
+                else if (val <= 35) { status = '보통'; color = '#81c784'; }
+                else if (val <= 75) { status = '나쁨'; color = '#ffb74d'; }
+                else { status = '매우나쁨'; color = '#e57373'; }
             } else {
-                if (val <= 30) return '좋음';
-                if (val <= 80) return '보통';
-                if (val <= 150) return '나쁨';
-                return '매우나쁨';
+                if (val <= 30) { status = '좋음'; color = '#4fc3f7'; }
+                else if (val <= 80) { status = '보통'; color = '#81c784'; }
+                else if (val <= 150) { status = '나쁨'; color = '#ffb74d'; }
+                else { status = '매우나쁨'; color = '#e57373'; }
             }
+            return `<span style="color:${color}; font-weight:500;">${status}</span>`;
         };
-        const pm10Desc = getAqiDesc(pm10, false);
-        const pm25Desc = getAqiDesc(pm25, true);
         
-        el.innerHTML = `
-            <strong>${name}</strong>: ${temp}°C (최저 ${minTemp}°C ~ 최고 ${maxTemp}°C), ${desc}
-            <span style="font-size: 0.9em; margin-left: 12px; color: var(--text-secondary);">
-                | 미세먼지: ${pm10Desc}(${Math.round(pm10)})
-                | 초미세먼지: ${pm25Desc}(${Math.round(pm25)})
-            </span>
-        `;
+        // Update DOM
+        const tempEl = document.querySelector('.weather-temp');
+        if (tempEl) {
+            tempEl.textContent = `${temp}°`;
+            document.querySelector('.weather-desc').textContent = desc;
+            document.querySelector('.weather-highlow').innerHTML = `<span class="w-low">${minTemp}°</span> / <span class="w-high">${maxTemp}°</span>`;
+            document.querySelector('.weather-dust').innerHTML = `미세 ${getAqiDesc(pm10, false)} · 초미세 ${getAqiDesc(pm25, true)}`;
+        }
+        
+        // Chart: get next 5 points (every 2 hours)
+        const hourIdx = weatherData.hourly.time.findIndex(t => new Date(t) > new Date());
+        let startIdx = hourIdx > 0 ? hourIdx - 1 : 0;
+        
+        let chartData = [];
+        let chartLabels = [];
+        let chartIcons = [];
+        for (let i = 0; i < 5; i++) {
+            let idx = startIdx + (i * 2); // every 2 hours
+            if (idx >= weatherData.hourly.time.length) break;
+            
+            const t = new Date(weatherData.hourly.time[idx]);
+            const hour = t.getHours();
+            chartLabels.push(hour + '시');
+            chartData.push(weatherData.hourly.temperature_2m[idx]);
+            
+            const cCode = weatherData.hourly.weathercode[idx];
+            const isNight = hour < 6 || hour >= 19;
+            if (isNight && [0,1,2].includes(cCode)) {
+                chartIcons.push(`<div class="fc-icon-moon"><svg viewBox="0 0 24 24" width="20" height="20" fill="#7baaf7"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></div>`);
+            } else if ([0,1,2].includes(cCode)) {
+                chartIcons.push(`<div class="fc-icon-sun"></div>`);
+            } else if ([3].includes(cCode)) {
+                chartIcons.push(`<span style="font-size:16px;">☁️</span>`);
+            } else {
+                chartIcons.push(`<span style="font-size:16px;">🌧️</span>`);
+            }
+        }
+        
+        // Render forecast items
+        const fcRow = document.querySelector('.weather-forecast-row');
+        if (fcRow) {
+            fcRow.innerHTML = chartData.map((d, i) => `
+                <div class="fc-item">
+                    ${chartIcons[i]}
+                    <div class="fc-time">${i === 0 ? chartLabels[i] : chartLabels[i].replace('시', '')}</div>
+                </div>
+            `).join('');
+        }
+        
+        // Render Chart
+        const ctx = document.getElementById('weatherMiniChart');
+        if (ctx) {
+            if (chartInstances['weatherMiniChart']) {
+                chartInstances['weatherMiniChart'].destroy();
+            }
+            chartInstances['weatherMiniChart'] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        data: chartData,
+                        borderColor: 'rgba(255, 255, 255, 0.25)',
+                        borderWidth: 1.5,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    layout: { padding: { top: 12, bottom: 2, left: 8, right: 8 } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: false, min: Math.min(...chartData) - 3, max: Math.max(...chartData) + 6 }
+                    },
+                    animation: false
+                },
+                plugins: [{
+                    id: 'topLabels',
+                    afterDatasetsDraw(chart) {
+                        const { ctx, data } = chart;
+                        ctx.save();
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                        ctx.font = '10px "Inter", sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        
+                        const meta = chart.getDatasetMeta(0);
+                        meta.data.forEach((point, i) => {
+                            const value = Math.round(data.datasets[0].data[i]);
+                            ctx.fillText(value + '°', point.x, point.y - 4);
+                        });
+                        ctx.restore();
+                    }
+                }]
+            });
+        }
+        
     } catch (error) {
-        console.error('Error fetching weather/AQI:', error);
-        el.textContent = `${name}: 날씨/미세먼지 정보 불러오기 실패`;
+        console.error('Weather error:', error);
     }
 }
 
 function initWeather() {
-    fetchWeather('paju', 'weather-paju', '파주');
+    updateWeatherWidget();
 }
 
 // --- 2. Calendar (Custom ICS Parser) ---
@@ -191,7 +312,7 @@ async function initCalendar() {
             console.warn('ical.js 파싱 실패, 커스텀 파서로 폴백합니다.', icalError);
             let errorMessage = icalError.message || String(icalError);
             
-            errorHtml = `<div style="font-size: 0.8rem; color: #ff6b6b; margin-bottom: 5px;">⚠️ ical.js 오류: ${errorMessage} (기본 파서로 전환됨)</div>`;
+            errorHtml = `<div class="calendar-error">⚠️ ical.js 오류: ${errorMessage} (기본 파서로 전환됨)</div>`;
             
             // 기존 커스텀 파서 (fallback)
             const lines = icsText.split(/\r?\n/);
@@ -240,44 +361,91 @@ async function initCalendar() {
         const days = ['일', '월', '화', '수', '목', '금', '토'];
         const dateString = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
 
-        eventsListEl.innerHTML = errorHtml + `<div style="font-size: 0.9rem; color: var(--accent-color); margin-bottom: 12px; font-weight: 600;">🗓️ ${dateString} (예정된 일정)</div>`;
+        eventsListEl.innerHTML = errorHtml + `<div class="calendar-date">🗓️ ${dateString}</div>`;
         
         if (displayEvents.length === 0) {
             eventsListEl.innerHTML += '<p class="no-events">예정된 일정이 없습니다.</p>';
             return;
         }
-        
+
+        const todayEvents = [];
+        const futureEvents = [];
         displayEvents.forEach(evt => {
+            if (evt.start >= todayEnd) futureEvents.push(evt);
+            else todayEvents.push(evt);
+        });
+
+        if (todayEvents.length === 0) {
+            eventsListEl.innerHTML += '<p class="no-events">오늘 일정이 없습니다.</p>';
+        }
+
+        const createCard = (evt, isFuture) => {
             const card = document.createElement('div');
-            card.className = (evt.start >= todayEnd) ? 'future-event-card' : 'event-card';
-            
+            card.className = isFuture ? 'future-event-card' : 'event-card';
             const title = document.createElement('div');
             title.className = 'event-title';
             title.textContent = evt.summary || '(제목 없음)';
-            
             const time = document.createElement('div');
             time.className = 'event-time';
-            
-            const formatTime = (d) => {
-                return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }) + ' ' + d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-            };
-
-            if (evt.isAllDay) {
-                time.textContent = evt.start.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }) + ' (종일)';
-            } else {
-                time.textContent = `${formatTime(evt.start)} - ${evt.end ? formatTime(evt.end) : ''}`;
-            }
-            
+            const formatTime = (d) => d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }) + ' ' + d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            if (evt.isAllDay) time.textContent = evt.start.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' }) + ' (종일)';
+            else time.textContent = `${formatTime(evt.start)} - ${evt.end ? formatTime(evt.end) : ''}`;
             card.appendChild(title);
             card.appendChild(time);
-            eventsListEl.appendChild(card);
+            return card;
+        };
+
+        todayEvents.forEach(evt => {
+            eventsListEl.appendChild(createCard(evt, false));
         });
+
+        if (futureEvents.length > 0) {
+            const wrap = document.createElement('div');
+            wrap.style.marginTop = '20px';
+            wrap.innerHTML = `
+                <div class="calendar-section-title">
+                    <div >다가오는 일정 (${futureEvents.length}개)</div>
+                    <button onclick="window.toggleFutureEvents()" id="future-events-btn" class="nav-btn toggle-btn" title="접기/펼치기"><svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                </div>
+                <div id="future-events-container" class="calendar-events-container" style="display: none;"></div>
+            `;
+            eventsListEl.appendChild(wrap);
+            const futureContainer = eventsListEl.querySelector('#future-events-container');
+            futureEvents.forEach(evt => {
+                futureContainer.appendChild(createCard(evt, true));
+            });
+        }
         
     } catch (error) {
         console.error('Calendar parse error:', error);
-        eventsListEl.innerHTML = `<p class="loading" style="color: #ff6b6b; font-size: 0.9rem;">⚠️ 일정 불러오기 실패: ${error.message}</p>`;
+        eventsListEl.innerHTML = `<p class="calendar-error">⚠️ 일정 불러오기 실패: ${error.message}</p>`;
     }
 }
+
+window.toggleStocks = function() {
+    const grid = document.getElementById('stocks-grid');
+    const btn = document.getElementById('stocks-toggle-btn');
+    if (!grid || !btn) return;
+    if (grid.style.display === 'none') {
+        grid.style.display = 'grid';
+        btn.classList.add('open');
+    } else {
+        grid.style.display = 'none';
+        btn.classList.remove('open');
+    }
+};
+
+window.toggleFutureEvents = function() {
+    const container = document.getElementById('future-events-container');
+    const btn = document.getElementById('future-events-btn');
+    if (container.style.display === 'none') {
+        container.style.display = 'flex';
+        btn.classList.add('open');
+    } else {
+        container.style.display = 'none';
+        btn.classList.remove('open');
+    }
+};
 
 // --- 3. Daily I Ching ---
 function initIChing(offset = 0) {
@@ -301,14 +469,17 @@ function initIChing(offset = 0) {
         });
     }
 
-    // 1번(index 0)부터 시작
-    let index = offset % ichingData.length;
+    // 2026년 9월 18일을 시작점(1번, index 0)으로 설정하여 매일 1씩 증가
+    const nowZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const baseZero = new Date(2026, 8, 18); // 9월은 8
+    const diffDays = Math.round((nowZero - baseZero) / (1000 * 60 * 60 * 24));
+    let index = diffDays % ichingData.length;
     if (index < 0) index += ichingData.length;
 
     // Update UI label
     const dateEl = document.getElementById('iching-date');
     if (dateEl) {
-        dateEl.textContent = index === 0 ? '오늘 (1번)' : `${index + 1}번 / ${ichingData.length}`;
+        dateEl.textContent = index === 0 ? '오늘' : `${index + 1}`;
     }
     
     if (selectEl) selectEl.value = index;
@@ -316,26 +487,25 @@ function initIChing(offset = 0) {
     const hexagram = ichingData[index];
     
     let html = `
-        <div style="display: flex; align-items: center; margin-bottom: 10px;">
-            <span style="font-size: 1.4rem; color: var(--accent-color); font-weight: bold; margin-right: 8px;">${hexagram.id}.</span>
-            <span style="font-size: 2.2rem; line-height: 1; color: var(--accent-color); margin-right: 8px; font-family: 'Segoe UI Symbol', 'Apple Symbols', sans-serif;">
+        <div class="iching-header">
+            <span class="iching-hexagram-icon">
                 ${String.fromCodePoint(0x4DC0 + hexagram.id - 1)}
             </span>
-            <span style="font-size: 1.4rem; color: var(--accent-color); font-weight: bold;">${hexagram.name_korean}(${hexagram.name_chinese})</span>
+            <span class="iching-hexagram-name">${hexagram.name_korean}(${hexagram.name_chinese})</span>
         </div>
-        <div class="iching-text" style="font-size: 1.05rem; line-height: 1.6; color: var(--text-color);">
-            ${hexagram.description ? `<p><span class="label-badge">설명</span> ${hexagram.description.replace(/\n/g, '<br>')}</p>` : ''}
-            <div style="margin-top:15px; padding: 10px; background: rgba(255, 235, 59, 0.1); border-left: 3px solid #ffeb3b; border-radius: 4px;">
-                <p style="color: #ffeb3b; margin-bottom: 5px;"><strong>卦辭</strong></p>
-                <p style="margin-bottom: 8px;">${hexagram.gwaesa_chinese}</p>
-                <p>${hexagram.gwaesa_korean}</p>
+        <div class="iching-text">
+            ${hexagram.description ? `<p class="text-body"><span class="label-badge" >설명</span> ${hexagram.description.replace(/\n/g, '<br>')}</p>` : ''}
+            <div class="iching-box">
+                <p class="iching-box-title"><strong>卦辭</strong></p>
+                <p class="iching-box-text">${hexagram.gwaesa_chinese}</p>
+                <p class="text-body">${hexagram.gwaesa_korean}</p>
             </div>
-            <div style="margin-top:15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-left: 3px solid var(--accent-color); border-radius: 4px;">
-                <p style="color: var(--accent-color); margin-bottom: 10px;"><strong>爻辭</strong></p>
-                ${hexagram.lines ? hexagram.lines.map(l => `<div style="margin-bottom:12px; font-size: 0.95rem;">
-                    <span style="color:#fbc531; font-weight:bold;">[${l.name}]</span><br>
-                    <span style="color:#dcdde1;">${l.text_chinese}</span><br>
-                    <span>${l.text_korean}</span>
+            <div class="iching-box">
+                <p class="iching-box-title"><strong>爻辭</strong></p>
+                ${hexagram.lines ? hexagram.lines.map(l => `<div class="iching-line-item">
+                    <span class="iching-line-name">[${l.name}]</span><br>
+                    <div class="iching-line-text">${l.text_chinese}</div>
+                    <div class="text-body">${l.text_korean}</div>
                 </div>`).join('') : ''}
             </div>
         </div>
@@ -398,41 +568,64 @@ function getFiveElements(year, month, day, hour, calendarType = 'solar') {
     });
     
     const layoutHtml = `
-        <div style="display: flex; gap: 10px; text-align: center; margin-bottom: 15px; flex-wrap: wrap;">
-            <div style="flex:1; min-width: 60px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 5px;">년(年)</div>
-                <div style="font-size:1.1rem; font-weight:bold;">${yStem}<br>${yBranch}</div>
-                <div style="font-size:0.75rem; color:#888; margin-top:4px;">${stemElements[yStem]}<br>${branchElements[yBranch]}</div>
+        <div class="saju-grid">
+            <div class="saju-pillar">
+                <div class="saju-pillar-title">년(年)</div>
+                <div class="saju-pillar-chars">${yStem}<br>${yBranch}</div>
+                <div class="saju-pillar-elements">${stemElements[yStem]}<br>${branchElements[yBranch]}</div>
             </div>
-            <div style="flex:1; min-width: 60px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 5px;">월(月)</div>
-                <div style="font-size:1.1rem; font-weight:bold;">${mStem}<br>${mBranch}</div>
-                <div style="font-size:0.75rem; color:#888; margin-top:4px;">${stemElements[mStem]}<br>${branchElements[mBranch]}</div>
+            <div class="saju-pillar">
+                <div class="saju-pillar-title">월(月)</div>
+                <div class="saju-pillar-chars">${mStem}<br>${mBranch}</div>
+                <div class="saju-pillar-elements">${stemElements[mStem]}<br>${branchElements[mBranch]}</div>
             </div>
-            <div style="flex:1; min-width: 60px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid var(--accent-color);">
-                <div style="font-size:0.8rem; color:var(--accent-color); margin-bottom: 5px;">일(日)</div>
-                <div style="font-size:1.1rem; font-weight:bold; color:var(--accent-color);">${dStem}<br>${dBranch}</div>
-                <div style="font-size:0.75rem; color:var(--accent-color); margin-top:4px; opacity: 0.8;">${stemElements[dStem]}<br>${branchElements[dBranch]}</div>
+            <div class="saju-pillar day-pillar">
+                <div class="saju-pillar-title">일(日)</div>
+                <div class="saju-pillar-chars">${dStem}<br>${dBranch}</div>
+                <div class="saju-pillar-elements">${stemElements[dStem]}<br>${branchElements[dBranch]}</div>
             </div>
-            <div style="flex:1; min-width: 60px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
-                <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom: 5px;">시(時)</div>
-                <div style="font-size:1.1rem; font-weight:bold;">${hStem}<br>${hBranch}</div>
-                <div style="font-size:0.75rem; color:#888; margin-top:4px;">${stemElements[hStem]}<br>${branchElements[hBranch]}</div>
+            <div class="saju-pillar">
+                <div class="saju-pillar-title">시(時)</div>
+                <div class="saju-pillar-chars">${hStem}<br>${hBranch}</div>
+                <div class="saju-pillar-elements">${stemElements[hStem]}<br>${branchElements[hBranch]}</div>
             </div>
         </div>
     `;
 
     return {
         layoutHtml: layoutHtml,
-        counts: counts
+        counts: counts,
+        baziString: `${yStem}${yBranch}년 ${mStem}${mBranch}월 ${dStem}${dBranch}일 ${hStem}${hBranch}시`
     };
 }
 
 function initSaju(offset = 0) {
+    // 확인 버튼이나 이전/다음으로 호출될 때는 항상 내용을 표시
+    window.isSajuBaseInfoVisible = true;
+    const toggleBtn = document.getElementById('saju-toggle-btn');
+    if (toggleBtn) toggleBtn.classList.add('open');
     calculateSaju(offset);
 }
 
-function calculateSaju(passedOffset) {
+async function calculateSaju(passedOffset) {
+    if (window.isSajuBaseInfoVisible === undefined) {
+        window.isSajuBaseInfoVisible = false;
+    }
+    
+    if (passedOffset === undefined) {
+        window.isSajuBaseInfoVisible = !window.isSajuBaseInfoVisible;
+        const toggleBtn = document.getElementById('saju-toggle-btn');
+        if (toggleBtn) {
+            if (window.isSajuBaseInfoVisible) toggleBtn.classList.add('open');
+            else toggleBtn.classList.remove('open');
+        }
+        const baseInfo = document.getElementById('saju-base-info');
+        if (baseInfo) {
+            baseInfo.style.display = window.isSajuBaseInfoVisible ? 'block' : 'none';
+        }
+        return;
+    }
+
     let offset = offsets.saju;
     if (typeof passedOffset === 'number') {
         offset = passedOffset;
@@ -458,160 +651,38 @@ function calculateSaju(passedOffset) {
     const sajuData = getFiveElements(year, month, day, hour, calendarType);
     const todaySaju = getFiveElements(now.getFullYear(), now.getMonth()+1, now.getDate(), 12, 'solar');
     
-    const seed = year + month + day + hour + (gender==='M'?1:2) + now.getDate();
-    
-    const fortunesTotal = [
-        "천간과 지지가 상생하는 형국으로 음양의 조화가 아름답게 어우러지는 날입니다. 오랫동안 묵혀두었던 계획을 실행에 옮기기에 최적의 타이밍이며, 뜻밖의 귀인이 나타나 막혔던 문제를 시원하게 해결해 줄 수 있는 길운이 흐릅니다. 긍정적인 마음가짐이 곧 운을 끌어당기는 자석이 될 것입니다.",
-        "비견과 겁재의 기운이 교차하여 주관과 고집이 강해지기 쉬운 날입니다. 독립적이고 진취적인 에너지가 넘치지만, 대인관계에서는 타인과의 사소한 의견 충돌이나 마찰이 발생할 수 있습니다. 오늘은 주장을 앞세우기보다 한 발 양보하고 경청하는 여유를 가질 때 오히려 더 큰 실리를 챙길 수 있습니다.",
-        "인성(문서운)이 발복하여 학업이나 문서, 계약과 관련된 일에서 빛을 발하는 하루입니다. 깊은 사고력과 직관력이 살아나므로 중요한 결정이나 도장을 찍어야 하는 일에 유리합니다. 윗사람이나 선배의 조언 속에 당신의 운을 트이게 할 중요한 열쇠가 숨어 있으니 귀를 기울여 보십시오.",
-        "관성의 기운이 강하게 작용하여 책임감과 중압감이 동시에 느껴지는 날입니다. 스스로를 통제하고 조직 내에서 능력을 인정받을 수 있는 기회이지만, 과도한 스트레스나 피로가 누적될 위험이 있습니다. 완벽주의를 잠시 내려놓고 적절한 휴식과 마음의 안정을 취하는 것이 내일을 위한 훌륭한 전략입니다.",
-        "식상의 기운이 활발히 움직이며 내면의 창의력과 언변, 표현력이 최고조에 달하는 날입니다. 예술적 감각이 요구되는 기획, 창작, 프레젠테이션 등에서 두각을 나타내어 사람들의 이목을 사로잡을 수 있습니다. 머릿속의 아이디어를 과감하게 세상 밖으로 꺼내어 적극적으로 어필해 보시길 권합니다."
-    ];
-    
-    const fortunesWealth = [
-        "정재의 기운이 뚜렷하여 금전의 흐름이 매우 안정적이고 예측 가능합니다. 일확천금보다는 땀 흘려 노력한 만큼의 정직한 대가가 통장에 차곡차곡 쌓이는 흐름입니다. 철저한 계획 하에 이루어지는 소비와 저축은 향후 튼튼한 자산의 밑거름이 될 것입니다.",
-        "편재운이 강하게 들어와 돈의 융통과 스케일이 커지는 시기입니다. 예상치 못한 뜻밖의 부수입, 보너스, 혹은 투자에서의 단기적인 성과를 기대해 볼 만합니다. 그러나 재물이 크게 들어오는 만큼 충동구매나 과시성 지출로 크게 빠져나갈 수 있으니 자금 관리에 각별히 유의해야 합니다.",
-        "재성(재물운)의 기운이 일시적으로 위축되거나 숨어있는 형국입니다. 무리한 투자나 새로운 사업 확장, 금전 거래는 가급적 피하고 현재의 자산을 안전하게 지키는 수성(守城)의 지혜가 필요합니다. 오늘은 지갑을 열기보다 재정 상태를 꼼꼼히 점검하고 재정비하는 시간을 가지는 것이 이롭습니다.",
-        "식신생재(食神生財)의 훌륭한 흐름이 형성되어, 나의 재능과 노력이 자연스럽게 재물로 연결되는 길한 하루입니다. 아이디어가 곧 돈이 되는 형국이니, 부업이나 새로운 수익 창출 방안을 모색하기에 아주 좋습니다. 부지런히 움직이는 만큼 금전 창고가 풍성해질 것입니다."
-    ];
-    
-    const loveFortunes = [
-        "애정운이 강하게 상승 곡선을 그리는 날입니다. 솔로라면 모임이나 우연한 자리에서 마음을 사로잡을 매력적인 인연을 만날 가능성이 높습니다. 커플은 서로의 감정이 깊어지고 로맨틱한 에너지가 충만하여, 평소 하지 못했던 진솔한 대화를 나누며 사랑을 견고히 다질 수 있습니다.",
-        "감정의 기복이 심해지고 예민해져 연인이나 배우자에게 서운함을 느끼기 쉬운 하루입니다. 오해는 아주 사소한 말실수에서 비롯될 수 있으므로, 말을 내뱉기 전에 한 번 더 생각하는 지혜가 필요합니다. 상대방의 입장에서 이해하려 노력하면 위기가 오히려 신뢰를 쌓는 기회가 됩니다.",
-        "잔잔하고 안정적인 애정의 기운이 흐르는 평화로운 날입니다. 자극적이고 화려한 데이트보다는 익숙한 공간에서의 편안하고 따뜻한 시간이 어울립니다. 서로의 일상을 공유하며 담백하게 마음을 주고받는 과정 속에서 소박하지만 진정한 사랑의 가치를 재확인하게 될 것입니다."
-    ];
-    
-    const fortunesCareer = [
-        "관운(직장운)이 밝게 빛나며 당신의 리더십과 업무 능력이 상사나 동료들에게 깊은 인상을 남깁니다. 승진, 이직, 중요한 프로젝트 발탁 등 긍정적인 소식을 기대해도 좋습니다. 자신감을 가지고 당당하게 앞으로 나서면 기대 이상의 훌륭한 성과를 거머쥘 수 있습니다.",
-        "식상운의 영향으로 직장 내에서 창의적이고 획기적인 아이디어가 샘솟습니다. 틀에 박힌 방식에서 벗어나 새로운 해결책을 제시하여 능력을 인정받는 하루입니다. 다만, 상사나 규율과 부딪힐 수 있는 반항심도 함께 커질 수 있으니 부드러운 화술로 의견을 포장하는 것이 중요합니다.",
-        "인성운이 강해져 배움과 자격증 취득, 학업에 매우 유리한 시기입니다. 꼼꼼한 문서 검토나 연구 개발 분야에서 탁월한 집중력을 발휘합니다. 실무에 쫓기기보다는 업무의 내실을 다지고 미래를 위한 역량을 한 단계 업그레이드하기에 완벽한 하루입니다."
-    ];
-    
-    const fortunesHealth = [
-        "생기(生氣)가 가득하여 몸과 마음의 컨디션이 최상입니다. 활력이 넘치니 밀린 업무나 운동을 소화하기에 무리가 없습니다. 이 좋은 에너지를 유지하기 위해 가벼운 스트레칭이나 규칙적인 유산소 운동으로 땀을 배출하면 건강의 선순환이 이루어집니다.",
-        "사주의 기운이 다소 정체되어 피로감이나 무기력증을 느끼기 쉬운 하루입니다. 특히 소화기 계통이나 신경성 스트레스에 취약할 수 있으니 자극적인 음식은 피하고 속을 편안하게 해주는 따뜻한 차를 가까이 하세요. 무리한 일정보다는 충분한 수면이 최고의 보약입니다.",
-        "음양오행의 불균형으로 인해 면역력이 일시적으로 떨어질 수 있는 시기입니다. 갑작스러운 온도 변화나 무리한 야외 활동에 주의가 필요합니다. 반신욕이나 가벼운 명상으로 심신의 긴장을 풀고, 비타민이 풍부한 제철 과일로 몸속 깊은 곳의 에너지를 충전하시길 바랍니다."
-    ];
-    
     const yearStr = now.getFullYear();
     const monthStr = String(now.getMonth() + 1).padStart(2, '0');
     const dayStr = String(now.getDate()).padStart(2, '0');
     const dateFormatted = `${yearStr}년 ${monthStr}월 ${dayStr}일`;
     const offsetStr = offset === 0 ? '(오늘)' : (offset > 0 ? '(+' + offset + '일)' : '(' + offset + '일)');
 
-    let html = `
-        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 15px;">사주 오행 분포</h4>
-            <div style="font-size: 0.95rem; color: var(--text-color); margin-bottom: 15px; text-align: center;">
+    let baseHtml = `
+        <div id="saju-base-info" class="saju-section-box" style="display: ${window.isSajuBaseInfoVisible ? 'block' : 'none'};">
+            <h4 class="saju-section-title">사주 오행 분포</h4>
+            <div class="text-md text-bold" style="text-align: center; margin-bottom: 15px;">
                 <strong>${year}년 ${month}월 ${day}일 ${hour}시 (${calendarType==='lunar'?'음':'양'}) (${gender === 'M' ? '남' : '여'})</strong>
             </div>
             ${sajuData.layoutHtml}
-            <div style="display: flex; gap: 15px; justify-content: center; font-size: 0.95rem; margin-top: 10px; margin-bottom: 15px;">
-                <div style="color: #4cd137;">목: ${sajuData.counts['목']}</div>
-                <div style="color: #e84118;">화: ${sajuData.counts['화']}</div>
-                <div style="color: #e1b12c;">토: ${sajuData.counts['토']}</div>
-                <div style="color: #dcdde1;">금: ${sajuData.counts['금']}</div>
-                <div style="color: #00a8ff;">수: ${sajuData.counts['수']}</div>
+            <div class="saju-element-counts">
+                <div class="saju-element-wood">목: ${sajuData.counts['목']}</div>
+                <div class="saju-element-fire">화: ${sajuData.counts['화']}</div>
+                <div class="saju-element-earth">토: ${sajuData.counts['토']}</div>
+                <div class="saju-element-metal">금: ${sajuData.counts['금']}</div>
+                <div class="saju-element-water">수: ${sajuData.counts['수']}</div>
             </div>
             
             <div style="padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
-                <h5 style="color: var(--text-color); margin: 0 0 10px 0; font-size: 0.95rem;">🤖 오행 정밀 분석</h5>
-                <p style="color: var(--text-secondary); line-height: 1.7; font-size: 0.9rem; margin: 0;">
-                    ${(function() {
-                        let dominantElement = '';
-                        let weakElement = '';
-                        let maxCount = -1;
-                        let minCount = 99;
-                        for (const [el, count] of Object.entries(sajuData.counts)) {
-                            if (count > maxCount) {
-                                maxCount = count;
-                                dominantElement = el;
-                            }
-                            if (count < minCount) {
-                                minCount = count;
-                                weakElement = el;
-                            }
-                        }
-                        const elementExpl = {
-                            '목': '성장과 의욕, 창의성, 기획력',
-                            '화': '열정과 명예, 표현력, 확산',
-                            '토': '안정과 신용, 포용력, 중재',
-                            '금': '결단력과 원칙, 결실, 분석',
-                            '수': '지혜와 유연성, 수용력, 유동성'
-                        };
-                        const dominantTraits = {
-                            '목': '본 사주는 목(木) 기운이 중심을 이루어 끊임없는 성장 욕구와 도전 의식을 가지고 있습니다. 하늘을 향해 곧게 뻗어 나가는 나무처럼 진취적이고 창의적인 기획력이 매우 뛰어나며, 무에서 유를 창조하는 능력이 탁월합니다. 시작하는 힘이 강해 리더나 기획자로서 큰 역량을 발휘할 수 있습니다.',
-                            '화': '본 사주는 화(火) 기운이 중심을 이루어 감정 표현이 매우 풍부하고 열정적입니다. 어둠을 밝히는 태양이나 불꽃처럼 주변을 환하게 만드는 리더십과 카리스마가 돋보입니다. 예술적 감각이나 언변이 뛰어나며 자기 자신을 표현하는 분야에서 큰 성과를 거둘 수 있는 강력한 확산의 에너지를 지녔습니다.',
-                            '토': '본 사주는 토(土) 기운이 중심을 이루어 성향이 신중하고 포용력이 넓습니다. 만물을 길러내는 대지처럼 사람들에게 깊은 믿음을 주며, 어떠한 상황에서도 쉽게 흔들리지 않는 굳건함과 안정감을 추구합니다. 치우치지 않는 균형 감각이 뛰어나 조직 내에서 갈등을 중재하고 화합을 이끌어내는 능력이 탁월합니다.',
-                            '금': '본 사주는 금(金) 기운이 중심을 이루어 옳고 그름을 가려내는 판단력과 원칙이 명확합니다. 잘 제련된 금속처럼 한 번 결정한 일은 끝까지 밀어붙여 결실을 맺는 뚝심이 있습니다. 맺고 끊음이 확실하고 고도의 집중력과 치밀함을 바탕으로 전문적인 분야에서 큰 두각을 나타냅니다.',
-                            '수': '본 사주는 수(水) 기운이 중심을 이루어 상황 판단이 매우 빠르고 환경 변화에 대한 적응력이 탁월합니다. 그릇에 따라 형태를 바꾸는 물처럼 유연하고 수용성이 넓으며, 깊고 차분한 사고력과 뛰어난 지혜를 갖추고 있습니다. 겉으로는 조용해 보여도 내면에는 직관적이고 철학적인 통찰력을 품고 있습니다.'
-                        };
-                        const weakAdvice = {
-                            '목': '반면, 추진의 씨앗인 목(木) 기운이 부족하여 시작하는 힘이나 초기 의욕이 다소 약할 수 있습니다. 아이디어는 있으나 실천으로 옮기는 데 주저할 수 있으니, 아주 작은 목표부터 세워 성취감을 맛보고 꾸준히 실천하는 습관을 기르는 것이 좋습니다. 식물을 가꾸거나 숲을 산책하며 생기를 보충하는 것도 큰 도움이 됩니다.',
-                            '화': '한편, 확산과 표현의 화(火) 기운이 부족하여 감정을 밖으로 드러내는 데 서툴거나 폭발적인 추진력이 떨어질 수 있습니다. 마음속의 열정을 표출할 수 있는 동적인 취미를 가지고 적극적으로 의견을 내는 연습이 필요합니다. 밝은 햇볕을 자주 쬐며 긍정적인 확신의 에너지를 채워보세요.',
-                            '토': '아울러, 중심을 잡아주는 토(土) 기운이 약해 심리적인 안정감이 흔들리거나 한 곳에 정착하는 데 시간이 걸릴 수 있습니다. 현실적인 감각과 끈기를 기르기 위해 규칙적인 생활 습관을 유지하고, 타인과의 신뢰를 쌓는 관계 맺기에 신경 써 보세요. 흙을 밟는 맨발 걷기나 등산을 추천합니다.',
-                            '금': '또한, 수렴과 결실의 금(金) 기운이 부족하여 결단력이 약하거나 마무리가 다소 흐지부지될 수 있습니다. 온정주의에 이끌려 맺고 끊음을 명확히 하지 못할 수 있으므로, 스스로 분명한 원칙과 기준을 세우고 이를 단호하게 지켜나가는 훈련과 계획을 완수하는 연습이 필요합니다.',
-                            '수': '한편, 유연성과 지혜의 수(水) 기운이 약해 삶의 융통성이 부족하거나 스트레스를 풀지 못해 조급해지기 쉽습니다. 생각의 유연성이 떨어져 한 가지에 갇힐 수 있으니, 명상이나 독서 등을 통해 마음의 여유와 깊이를 다지는 시간이 꼭 필요합니다. 충분한 수분 섭취와 물가 산책으로 내면의 흐름을 원활히 해보세요.'
-                        };
-                        
-                        let text = `<strong>[강점 요약]</strong><br>${dominantTraits[dominantElement]}<br><br>`;
-                        
-                        if (minCount === 0) {
-                            text += `<strong>[보완점 및 조언]</strong><br>${weakAdvice[weakElement]} (비어 있는 기운 보완)`;
-                        } else {
-                            text += `<strong>[보완점 및 조언]</strong><br>${weakAdvice[weakElement]} (상대적으로 약한 기운 보완)`;
-                        }
-                        return text;
-                    })()}
-                </p>
-            </div>
-        </div>
-        
-        <div style="padding: 10px 0; margin-bottom: 10px;">
-            <h4 style="color: var(--text-color); margin-bottom: 15px;">☯️ 사주와 오늘의 기운 교류</h4>
-            
-            <h5 style="color: var(--accent-color); margin: 0 0 5px 0;">🌟 총운</h5>
-            <p style="line-height: 1.6; color: var(--text-secondary); margin-bottom: 15px; font-size: 0.95rem;">
-                ${fortunesTotal[seed % fortunesTotal.length]}
-            </p>
-            
-            <h5 style="color: #e1b12c; margin: 0 0 5px 0;">💰 재물운</h5>
-            <p style="line-height: 1.6; color: var(--text-secondary); margin-bottom: 15px; font-size: 0.95rem;">
-                ${fortunesWealth[seed % fortunesWealth.length]}
-            </p>
-
-            <h5 style="color: #e84118; margin: 0 0 5px 0;">💕 애정운</h5>
-            <p style="line-height: 1.6; color: var(--text-secondary); margin-bottom: 15px; font-size: 0.95rem;">
-                ${loveFortunes[seed % loveFortunes.length]}
-            </p>
-            
-            <h5 style="color: #00a8ff; margin: 0 0 5px 0;">💼 직장/학업운</h5>
-            <p style="line-height: 1.6; color: var(--text-secondary); margin-bottom: 15px; font-size: 0.95rem;">
-                ${fortunesCareer[seed % fortunesCareer.length]}
-            </p>
-
-            <h5 style="color: #4cd137; margin: 0 0 5px 0;">🌿 건강운</h5>
-            <p style="line-height: 1.6; color: var(--text-secondary); margin-bottom: 0; font-size: 0.95rem;">
-                ${fortunesHealth[seed % fortunesHealth.length]}
-            </p>
-        </div>
-
-        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h4 style="color: var(--accent-color); margin: 0;">오늘의 일진 오행</h4>
-                <div style="display: flex; align-items: center; gap: 5px;">
-                    <span style="font-size: 0.9rem; color: var(--text-secondary);">시간: </span>
-                    <input type="number" id="today-saju-hour" value="${now.getHours()}" min="0" max="23" style="width: 50px; padding: 4px; background: transparent; border: 1px solid var(--border-color); color: var(--text-color); border-radius: 4px;" onchange="updateTodaySaju(${offset})">
+                <div class="calendar-section-title">
+                    <h5 class="saju-section-title text-sm">🤖 오행 정밀 분석</h5>
+                    <div style="display: flex; gap: 4px;">
+                        <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">${window.ttsRate ? window.ttsRate.toFixed(2) : '1.00'}x</button>
+                        <button class="tts-btn" onclick="toggleTTS('saju_analysis')" id="tts-btn-saju_analysis" title="읽기/정지">🔊</button>
+                        <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-saju_analysis" title="일시정지/재개" style="display: none;">⏸️</button>
+                    </div>
                 </div>
-            </div>
-            <div id="today-saju-container">
-                ${todaySaju.layoutHtml}
-                <div style="display: flex; gap: 15px; justify-content: center; font-size: 0.95rem; margin-top: 10px;">
-                    <div style="color: #4cd137;">목: ${todaySaju.counts['목']}</div>
-                    <div style="color: #e84118;">화: ${todaySaju.counts['화']}</div>
-                    <div style="color: #e1b12c;">토: ${todaySaju.counts['토']}</div>
-                    <div style="color: #dcdde1;">금: ${todaySaju.counts['금']}</div>
-                    <div style="color: #00a8ff;">수: ${todaySaju.counts['수']}</div>
+                <div id="saju_analysis_text">
+                    <div style="text-align: center; padding: 15px; color: var(--text-secondary); font-size: 0.9rem;">AI가 오행을 분석 중입니다...</div>
                 </div>
             </div>
         </div>
@@ -621,9 +692,98 @@ function calculateSaju(passedOffset) {
             <span class="nav-date" style="font-weight: bold; min-width: 150px; text-align: center;">${dateFormatted} ${offsetStr}</span>
             <button class="nav-btn" onclick="changeOffset('saju', 1)" title="다음">&#10095;</button>
         </div>
+        
+        <div class="saju-section-box" style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h4 class="text-md text-bold text-accent" style="margin: 0;">오늘의 일진 오행</h4>
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <span style="font-size: 0.9rem; color: var(--text-secondary);">시간: </span>
+                    <input type="number" id="today-saju-hour" value="${now.getHours()}" min="0" max="23" class="saju-input" onchange="updateTodaySaju(${offset})">
+                </div>
+            </div>
+            <div id="today-saju-container">
+                ${todaySaju.layoutHtml}
+                <div class="saju-element-counts">
+                    <div class="saju-element-wood">목: ${todaySaju.counts['목']}</div>
+                    <div class="saju-element-fire">화: ${todaySaju.counts['화']}</div>
+                    <div class="saju-element-earth">토: ${todaySaju.counts['토']}</div>
+                    <div class="saju-element-metal">금: ${todaySaju.counts['금']}</div>
+                    <div class="saju-element-water">수: ${todaySaju.counts['수']}</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="padding: 10px 0; margin-bottom: 10px;" id="saju-fortune-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h4 class="text-md text-bold" style="margin: 0;"><span class="tts-ignore">☯️</span> 사주와 오늘의 기운 교류</h4>
+                <div style="display: flex; gap: 4px;">
+                    <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">${window.ttsRate ? window.ttsRate.toFixed(2) : '1.00'}x</button>
+                    <button class="tts-btn" onclick="toggleTTS('saju_fortune')" id="tts-btn-saju_fortune" title="읽기/정지">🔊</button>
+                    <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-saju_fortune" title="일시정지/재개" style="display: none;">⏸️</button>
+                </div>
+            </div>
+            <div id="saju_fortune_text">
+                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">AI가 오늘의 운세를 분석 중입니다... 잠시만 기다려주세요.</div>
+            </div>
+        </div>
     `;
     
-    container.innerHTML = html;
+    container.innerHTML = baseHtml;
+
+    try {
+        const ohangParam = `목:${sajuData.counts['목']},화:${sajuData.counts['화']},토:${sajuData.counts['토']},금:${sajuData.counts['금']},수:${sajuData.counts['수']}`;
+        const todayOhangParam = `목:${todaySaju.counts['목']},화:${todaySaju.counts['화']},토:${todaySaju.counts['토']},금:${todaySaju.counts['금']},수:${todaySaju.counts['수']}`;
+        const queryParams = new URLSearchParams({
+            bazi: sajuData.baziString,
+            ohang: ohangParam,
+            todayBazi: todaySaju.baziString || '',
+            todayOhang: todayOhangParam
+        });
+        const response = await fetch(`/api/saju?${queryParams.toString()}`);
+        if (!response.ok) {
+            const errJson = await response.json().catch(() => ({}));
+            throw new Error(errJson.error || '운세 데이터를 가져오는데 실패했습니다.');
+        }
+        const data = await response.json();
+        
+        const fortuneHtml = `
+            <h5 class="text-md text-bold text-accent" style="margin: 0 0 5px 0;"><span class="tts-ignore">🌟</span> 총운</h5>
+            <p class="text-body" style="margin-bottom: 15px;">${data.total || '정보 없음'}</p>
+            
+            <h5 class="text-md text-bold saju-element-earth" style="margin: 0 0 5px 0;"><span class="tts-ignore">💰</span> 재물운</h5>
+            <p class="text-body" style="margin-bottom: 15px;">${data.wealth || '정보 없음'}</p>
+
+            <h5 class="text-md text-bold saju-element-fire" style="margin: 0 0 5px 0;"><span class="tts-ignore">💕</span> 애정운</h5>
+            <p class="text-body" style="margin-bottom: 15px;">${data.love || '정보 없음'}</p>
+            
+            <h5 class="text-md text-bold saju-element-water" style="margin: 0 0 5px 0;"><span class="tts-ignore">💼</span> 직장/학업운</h5>
+            <p class="text-body" style="margin-bottom: 15px;">${data.career || '정보 없음'}</p>
+
+            <h5 class="text-md text-bold saju-element-wood" style="margin: 0 0 5px 0;"><span class="tts-ignore">🌿</span> 건강운</h5>
+            <p class="text-body" style="margin-bottom: 0;">${data.health || '정보 없음'}</p>
+        `;
+        document.getElementById('saju_fortune_text').innerHTML = fortuneHtml;
+
+        // Update ohang analysis with AI data
+        const analysisEl = document.getElementById('saju_analysis_text');
+        if (analysisEl && (data.ohang_strength || data.ohang_advice)) {
+            analysisEl.innerHTML = `
+                <strong>[강점 요약]</strong><br>
+                <span>${data.ohang_strength || ''}</span>
+                <br><br>
+                <strong>[보완점 및 조언]</strong><br>
+                <span>${data.ohang_advice || ''}</span>
+            `;
+        }
+    } catch (e) {
+        console.error("Saju fetch error:", e);
+        document.getElementById('saju_fortune_text').innerHTML = `
+            <div style="color: var(--saju-fire); text-align: center; padding: 20px;">
+                운세를 불러오지 못했습니다.<br>
+                <small>${e.message}</small>
+            </div>
+        `;
+    }
 }
 
 function updateTodaySaju(offset) {
@@ -635,12 +795,12 @@ function updateTodaySaju(offset) {
     if (container) {
         container.innerHTML = `
             ${todaySaju.layoutHtml}
-            <div style="display: flex; gap: 15px; justify-content: center; font-size: 0.95rem; margin-top: 10px;">
-                <div style="color: #4cd137;">목: ${todaySaju.counts['목']}</div>
-                <div style="color: #e84118;">화: ${todaySaju.counts['화']}</div>
-                <div style="color: #e1b12c;">토: ${todaySaju.counts['토']}</div>
-                <div style="color: #dcdde1;">금: ${todaySaju.counts['금']}</div>
-                <div style="color: #00a8ff;">수: ${todaySaju.counts['수']}</div>
+            <div class="saju-element-counts">
+                <div class="saju-element-wood">목: ${todaySaju.counts['목']}</div>
+                <div class="saju-element-fire">화: ${todaySaju.counts['화']}</div>
+                <div class="saju-element-earth">토: ${todaySaju.counts['토']}</div>
+                <div class="saju-element-metal">금: ${todaySaju.counts['금']}</div>
+                <div class="saju-element-water">수: ${todaySaju.counts['수']}</div>
             </div>
         `;
     }
@@ -663,30 +823,147 @@ function initPhilosophy(offset = 0) {
         philosophyData.forEach((item, i) => {
             const opt = document.createElement('option');
             opt.value = i;
-            opt.textContent = `${i + 1}. ${item.title.split('(')[0].trim()}`;
+            opt.textContent = `${i + 1}. ${item.title}`;
             selectEl.appendChild(opt);
         });
     }
 
-    // 1번(index 0)부터 시작
-    let index = offset % philosophyData.length;
+    // 2026년 9월 18일을 시작점(1번, index 0)으로 설정하여 매일 1씩 증가
+    const nowZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const baseZero = new Date(2026, 8, 18); // 9월은 8
+    const diffDays = Math.round((nowZero - baseZero) / (1000 * 60 * 60 * 24));
+    let index = diffDays % philosophyData.length;
     if (index < 0) index += philosophyData.length;
 
     // Update UI label
     const dateEl = document.getElementById('philosophy-date');
     if (dateEl) {
-        dateEl.textContent = index === 0 ? '오늘 (1번)' : `${index + 1}번 / ${philosophyData.length}`;
+        dateEl.textContent = index === 0 ? '오늘' : `${index + 1}번`;
     }
 
     if (selectEl) selectEl.value = index;
     const item = philosophyData[index];
-    
+
+    const chapterBadge = item.chapter
+        ? `<div class="phil-chapter-badge tts-ignore">${item.chapter}</div>`
+        : '';
+    const sourceBadge = item.source
+        ? `<div class="phil-source tts-ignore">📖 ${item.source}</div>`
+        : '';
+
     container.innerHTML = `
-        <div style="font-weight: 600; color: #fff; margin-bottom: 15px; font-size: 1.25rem; color: var(--accent-color);">${index + 1}. ${item.title}</div>
-        <div class="philosophy-desc" style="line-height: 1.7; font-size: 1.05rem;">${item.content.replace(/\n/g, '<br>')}</div>
+        ${chapterBadge}
+        <div class="text-lg text-bold text-accent" style="margin: 10px 0 14px;">${item.title}</div>
+        <div class="philosophy-desc text-body">${item.content.replace(/\n/g, '<br>')}</div>
+        ${sourceBadge}
     `;
+
+    // 고정 섹션 (최초 1회만 렌더링)
+    renderPhilosophyFixed();
 }
 
+function renderPhilosophyFixed() {
+    if (document.getElementById('philosophy-fixed-section')) return; // 이미 있으면 skip
+    if (typeof philosophyFixed === 'undefined') return;
+
+    const section = document.querySelector('.philosophy-section');
+    if (!section) return;
+
+    const stepsHTML = philosophyFixed.steps.map(s =>
+        `<li><span class="phil-step-change">${s.change}</span><span class="phil-step-desc"> — ${s.desc}</span></li>`
+    ).join('');
+
+    const bibHTML = philosophyFixed.bibliography.map(b =>
+        `<li>${b}</li>`
+    ).join('');
+
+    const chaptersHTML = philosophyFixed.chapters.map(c => {
+        const match = c.items.match(/^(\d+)/);
+        const index = match ? parseInt(match[1], 10) - 1 : 0;
+        return `<button class="phil-chapter-tag" onclick="showPhilChapterPreview(${index}, this)">${c.label} <em>${c.title}</em> <small>(${c.items})</small></button>`;
+    }).join('');
+
+    const fixedEl = document.createElement('div');
+    fixedEl.id = 'philosophy-fixed-section';
+    fixedEl.className = 'phil-fixed-wrap';
+    fixedEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <button class="phil-fixed-toggle" onclick="togglePhilFixed()" id="phil-fixed-btn" style="flex: 1; margin: 0; text-align: left;">
+                📚 들뢰즈 철학 전체 흐름 &amp; 문헌
+                <span id="phil-fixed-chevron" style="float:right; margin-right: 8px;">▸</span>
+            </button>
+            <div style="display: flex; gap: 4px; margin-left: 8px;">
+                <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">${window.ttsRate ? window.ttsRate.toFixed(2) : '1.00'}x</button>
+                <button class="tts-btn" onclick="toggleTTS('phil-fixed-body')" id="tts-btn-phil-fixed-body" title="읽기/정지">🔊</button>
+                <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-phil-fixed-body" title="일시정지/재개" style="display: none;">⏸️</button>
+            </div>
+        </div>
+        <div id="phil-fixed-body" style="display:none;">
+            <div class="phil-summary-box">
+                <p>"${philosophyFixed.summary}"</p>
+                <div class="phil-flow">${philosophyFixed.flow}</div>
+            </div>
+            <div class="phil-chapters-row">${chaptersHTML}</div>
+            <div id="phil-chapter-preview" style="display:none; margin-bottom:16px; padding:15px; background:var(--bg-2); border-left:3px solid var(--accent); border-radius:4px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);"></div>
+            <div class="phil-fixed-cols">
+                <div class="phil-fixed-col">
+                    <h4>이 100개를 이해하는 10단계</h4>
+                    <ol class="phil-steps-list">${stepsHTML}</ol>
+                </div>
+                <div class="phil-fixed-col">
+                    <h4>핵심 1차 문헌</h4>
+                    <ul class="phil-bib-list">${bibHTML}</ul>
+                </div>
+            </div>
+        </div>
+    `;
+    section.appendChild(fixedEl);
+}
+
+function togglePhilFixed() {
+    const body = document.getElementById('phil-fixed-body');
+    const chevron = document.getElementById('phil-fixed-chevron');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
+}
+
+window.showPhilChapterPreview = function(index, btnEl = null) {
+    const previewEl = document.getElementById('phil-chapter-preview');
+    if (!previewEl) return;
+    
+    if (btnEl) {
+        if (btnEl.classList.contains('active')) {
+            btnEl.classList.remove('active');
+            previewEl.style.display = 'none';
+            return;
+        }
+        document.querySelectorAll('.phil-chapter-tag').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+    }
+    
+    // Bounds check with wrap-around
+    if (index < 0) index = philosophyData.length - 1;
+    if (index >= philosophyData.length) index = 0;
+    
+    const item = philosophyData[index];
+    if (item) {
+        const prevIdx = (index - 1 + philosophyData.length) % philosophyData.length;
+        const nextIdx = (index + 1) % philosophyData.length;
+        
+        previewEl.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;">
+                <button onclick="showPhilChapterPreview(${prevIdx})" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text-primary); cursor:pointer; font-size:0.9rem; padding:4px 10px; border-radius:4px; transition:background 0.2s;">◀</button>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">[${index + 1}번 항목 내용 미리보기]</div>
+                <button onclick="showPhilChapterPreview(${nextIdx})" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text-primary); cursor:pointer; font-size:0.9rem; padding:4px 10px; border-radius:4px; transition:background 0.2s;">▶</button>
+            </div>
+            <h4 style="margin: 0 0 8px 0; color: var(--accent-light); font-size: 1.05rem;">${item.title}</h4>
+            <div class="text-body" style="font-size: 0.95rem; line-height: 1.6;">${item.content.replace(/\n/g, '<br>')}</div>
+        `;
+        previewEl.style.display = 'block';
+    }
+};
 
 // --- 5. KOSPI & Stocks ---
 async function initKospi(period = 'today') {
@@ -709,20 +986,17 @@ async function initKospi(period = 'today') {
         
         container.innerHTML = `
             <div class="kospi-info">
-                <div class="kospi-title">KOSPI 종합주가지수</div>
-                <div style="display:flex; align-items: baseline; margin-top:4px;">
+                <div class="kospi-title">KOSPI</div>
+                <div class="kospi-value-row" style="display:flex; align-items: baseline; margin-top:4px;">
                     <div class="kospi-value ${colorClass}">${price}</div>
-                    <div style="margin-left: 12px; font-size: 0.95rem;" class="${colorClass}">
+                    <div class="kospi-change-info" style="margin-left: 12px; font-size: 0.95rem;" class="${colorClass}">
                         ${sign} ${Math.abs(change)} (${ratio > 0 ? '+' : ''}${ratio}%)
                     </div>
                 </div>
             </div>
-            <div class="kospi-chart-container">
-                <canvas id="chart-KOSPI"></canvas>
-            </div>
         `;
         
-        drawHistoryChart('chart-KOSPI', 'KOSPI', period, priceRaw, colorHex);
+        
         
     } catch (e) {
         console.error(e);
@@ -753,9 +1027,6 @@ async function initStocks(period = 'today') {
                 <div class="stock-name">${stock.name}</div>
                 <div class="stock-price" id="price-${stock.code}">-</div>
                 <div class="stock-change" id="change-${stock.code}">-</div>
-                <div class="stock-chart-container">
-                    <canvas id="chart-${stock.code}"></canvas>
-                </div>
             `;
             grid.appendChild(card);
         }
@@ -784,7 +1055,7 @@ async function initStocks(period = 'today') {
             document.getElementById(`change-${stock.code}`).textContent = `${sign} ${Math.abs(change)} (${ratio > 0 ? '+' : ''}${ratio}%)`;
             document.getElementById(`change-${stock.code}`).className = `stock-change ${colorClass}`;
             
-            drawHistoryChart(`chart-${stock.code}`, stock.code, period, priceRaw, colorHex);
+            
             
         } catch (e) {
             console.error(`Error fetching ${stock.name}:`, e);
@@ -875,6 +1146,19 @@ function jumpToIChing(index) {
 }
 
 // --- TTS 기능 ---
+window.ttsRate = 1.0;
+
+window.changeTTSSpeed = function() {
+    const rates = [0.75, 1.0, 1.25, 1.5, 2.0];
+    let idx = rates.indexOf(window.ttsRate);
+    window.ttsRate = rates[(idx + 1) % rates.length];
+    
+    const speedBtns = document.querySelectorAll('.tts-speed-btn');
+    speedBtns.forEach(btn => {
+        btn.textContent = window.ttsRate.toFixed(2) + 'x';
+    });
+};
+
 let currentUtterance = null;
 let currentPlayingSection = null;
 
@@ -916,35 +1200,51 @@ window.toggleTTS = function(section) {
     
     // 섹션별 텍스트 가져오기
     let textToRead = '';
-    const contentEl = document.getElementById(`${section}-content`);
+    let contentEl = document.getElementById(section.startsWith('saju') ? 'saju-content' : `${section}-content`);
+    if (!contentEl) contentEl = document.getElementById(section);
     
     if (contentEl) {
         const clone = contentEl.cloneNode(true);
-        // 배지나 불필요한 라벨은 TTS가 읽지 않도록 DOM 클론에서 제거
-        const badges = clone.querySelectorAll('.label-badge');
-        badges.forEach(b => b.remove());
+        // 배지나 불필요한 라벨, 버튼, 네비게이션 날짜 제거
+        const ignores = clone.querySelectorAll('.label-badge, .tts-ignore, button, select, input, .nav-date');
+        ignores.forEach(b => b.remove());
         
-        // innerText를 사용하면 화면에 보이는 텍스트를 자연스럽게 줄바꿈하여 가져옵니다.
+        // 화면에 보이지 않는 요소(display:none)의 innerText를 제대로 가져오기 위해
+        // 임시로 body에 보이게 추가한 뒤 텍스트를 추출합니다.
+        clone.style.display = 'block';
+        clone.style.position = 'absolute';
+        clone.style.left = '-9999px';
+        clone.style.visibility = 'hidden';
+        document.body.appendChild(clone);
+        
         textToRead = clone.innerText;
         
-        if (section === 'saju') {
-            const startIdx = textToRead.indexOf("오행 정밀 분석");
-            if (startIdx !== -1) {
-                textToRead = textToRead.substring(startIdx);
-            }
+        document.body.removeChild(clone);
+        
+        if (section === 'saju_analysis') {
+            const part1Start = textToRead.indexOf("오행 정밀 분석");
+            const part1End = textToRead.indexOf("오늘의 일진 오행");
             
-            const endIdx = textToRead.indexOf("오늘의 일진 오행");
-            if (endIdx !== -1) {
-                textToRead = textToRead.substring(0, endIdx);
+            if (part1Start !== -1 && part1End !== -1) {
+                textToRead = textToRead.substring(part1Start, part1End);
+            }
+        } else if (section === 'saju_fortune') {
+            const part2Start = textToRead.indexOf("사주와 오늘의 기운 교류");
+            
+            if (part2Start !== -1) {
+                textToRead = textToRead.substring(part2Start);
             }
         }
+        
+        // 이모지 및 특수 기호 완벽 제거
+        textToRead = textToRead.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '');
     }
     
     if (!textToRead.trim()) return;
     
     currentUtterance = new SpeechSynthesisUtterance(textToRead);
     currentUtterance.lang = 'ko-KR';
-    currentUtterance.rate = 1.0;
+    currentUtterance.rate = window.ttsRate || 1.0;
     
     currentUtterance.onend = () => {
         if (btn) {
