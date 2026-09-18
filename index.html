@@ -134,7 +134,7 @@
             <section class="philosophy-section">
                 <div class="section-header-flex">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 class="section-title" style="margin: 0;">들뢰즈</h3>
+                        <h3 class="section-title" style="margin: 0;">들뢰즈 철학 전체 흐름</h3>
                         <div style="display: flex; gap: 4px;">
                             <button class="tts-btn tts-speed-btn" onclick="changeTTSSpeed()" title="속도 조절" style="width: auto; padding: 0 6px; font-size: 0.7rem; border-radius: var(--r-sm);">1.00x</button>
                             <button class="tts-btn" onclick="toggleTTS('philosophy')" id="tts-btn-philosophy" title="읽기/정지">🔊</button>
@@ -142,13 +142,14 @@
                         </div>
                     </div>
                     <div class="nav-buttons">
-                        <select id="philosophy-select" class="nav-select" onchange="jumpToPhilosophy(this.value)">
-                            <!-- Options injected via JS -->
-                        </select>
-                        <button class="nav-btn" onclick="changeOffset('philosophy', -1)" title="이전">&#10094;</button>
+                        <button class="nav-btn" onclick="changeOffset('philosophy', -1)">&#10094;</button>
                         <span id="philosophy-date" class="nav-date">오늘</span>
-                        <button class="nav-btn" onclick="changeOffset('philosophy', 1)" title="다음">&#10095;</button>
+                        <button class="nav-btn" onclick="changeOffset('philosophy', 1)">&#10095;</button>
                     </div>
+                </div>
+                
+                <div id="philosophy-chapter-grid" class="phil-chapter-grid">
+                    <!-- Buttons injected via JS -->
                 </div>
                 <div id="philosophy-content" class="philosophy-content">
                     <div style="text-align:center; color: var(--text-secondary); padding: 20px;">들뢰즈 철학 정보를 불러오는 중...</div>

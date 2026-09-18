@@ -807,41 +807,63 @@ function updateTodaySaju(offset) {
 }
 
 // --- 6. Today's Philosophy ---
-function initPhilosophy(offset = 0) {
+function initPhilosophy(forceIndex = null) {
     const container = document.getElementById('philosophy-content');
+    const gridContainer = document.getElementById('philosophy-chapter-grid');
     if (typeof philosophyData === 'undefined' || philosophyData.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-secondary);">철학 데이터를 불러올 수 없습니다.</div>';
+        if (container) container.innerHTML = '<div style="color:var(--text-secondary);">철학 데이터를 불러올 수 없습니다.</div>';
         return;
     }
     
-    const now = new Date();
-    now.setDate(now.getDate() + offset);
+    // 1. Calculate today's default index
+    const nowZero = new Date();
+    nowZero.setHours(0,0,0,0);
+    const baseZero = new Date(2026, 8, 18); // 9월은 8
+    const diffDays = Math.round((nowZero - baseZero) / (1000 * 60 * 60 * 24));
+    let todayIndex = diffDays % philosophyData.length;
+    if (todayIndex < 0) todayIndex += philosophyData.length;
     
-    // Populate select if empty
-    const selectEl = document.getElementById('philosophy-select');
-    if (selectEl && selectEl.options.length === 0) {
-        philosophyData.forEach((item, i) => {
-            const opt = document.createElement('option');
-            opt.value = i;
-            opt.textContent = `${i + 1}. ${item.title}`;
-            selectEl.appendChild(opt);
+    // 2. Initialize offsets.philosophy ONCE as absolute index
+    if (typeof window._philInitIndex === 'undefined') {
+        window._philInitIndex = true;
+        offsets.philosophy = todayIndex;
+    }
+    
+    let index = offsets.philosophy;
+
+    // Generate chapter buttons ONCE
+    if (gridContainer && gridContainer.innerHTML.trim() === '') {
+        const chapters = [];
+        const chapterIndices = {};
+        philosophyData.forEach((item, idx) => {
+            if (item.chapter && !chapterIndices.hasOwnProperty(item.chapter)) {
+                chapters.push(item.chapter);
+                chapterIndices[item.chapter] = idx;
+            }
+        });
+
+        chapters.forEach(chap => {
+            const btn = document.createElement('button');
+            btn.className = 'phil-chapter-btn';
+            btn.textContent = chap.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim();
+            btn.onclick = () => {
+                offsets.philosophy = chapterIndices[chap];
+                initPhilosophy();
+            };
+            gridContainer.appendChild(btn);
         });
     }
 
-    // 2026년 9월 18일을 시작점(1번, index 0)으로 설정하여 매일 1씩 증가
-    const nowZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const baseZero = new Date(2026, 8, 18); // 9월은 8
-    const diffDays = Math.round((nowZero - baseZero) / (1000 * 60 * 60 * 24));
-    let index = diffDays % philosophyData.length;
-    if (index < 0) index += philosophyData.length;
+    // Hide old select if it still exists
+    const selectEl = document.getElementById('philosophy-select');
+    if (selectEl) selectEl.style.display = 'none';
 
     // Update UI label
     const dateEl = document.getElementById('philosophy-date');
     if (dateEl) {
-        dateEl.textContent = index === 0 ? '오늘' : `${index + 1}번`;
+        dateEl.textContent = index === todayIndex ? '오늘' : `${index + 1}/${philosophyData.length}`;
     }
 
-    if (selectEl) selectEl.value = index;
     const item = philosophyData[index];
 
     const chapterBadge = item.chapter
@@ -851,12 +873,25 @@ function initPhilosophy(offset = 0) {
         ? `<div class="phil-source tts-ignore">📖 ${item.source}</div>`
         : '';
 
-    container.innerHTML = `
-        ${chapterBadge}
-        <div class="text-lg text-bold text-accent" style="margin: 10px 0 14px;">${item.title}</div>
-        <div class="philosophy-desc text-body">${item.content.replace(/\n/g, '<br>')}</div>
-        ${sourceBadge}
-    `;
+    if (container) {
+        container.innerHTML = `
+            ${chapterBadge}
+            <div class="text-lg text-bold text-accent" style="margin: 10px 0 14px;">${item.title}</div>
+            <div class="philosophy-desc text-body">${item.content.replace(/\n/g, '<br>')}</div>
+            ${sourceBadge}
+        `;
+    }
+
+    // Highlight active button
+    if (gridContainer) {
+        gridContainer.querySelectorAll('.phil-chapter-btn').forEach(btn => {
+            if (item.chapter && btn.textContent === item.chapter.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim()) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
 
     // 고정 섹션 (최초 1회만 렌더링)
     renderPhilosophyFixed();
