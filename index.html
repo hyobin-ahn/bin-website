@@ -142,17 +142,73 @@
                         </div>
                     </div>
                     <div class="nav-buttons">
+                        <select id="philosophy-select" class="nav-select" onchange="jumpToPhilosophy(this.value)" style="margin-right: 10px; background: var(--bg-1); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px; max-width: 150px;">
+                        </select>
                         <button class="nav-btn" onclick="changeOffset('philosophy', -1)">&#10094;</button>
                         <span id="philosophy-date" class="nav-date">오늘</span>
                         <button class="nav-btn" onclick="changeOffset('philosophy', 1)">&#10095;</button>
                     </div>
                 </div>
                 
-                <div id="philosophy-chapter-grid" class="phil-chapter-grid">
-                    <!-- Buttons injected via JS -->
-                </div>
                 <div id="philosophy-content" class="philosophy-content">
                     <div style="text-align:center; color: var(--text-secondary); padding: 20px;">들뢰즈 철학 정보를 불러오는 중...</div>
+                </div>
+                <div id="philosophy-bottom-nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                    <button class="nav-btn" onclick="changeOffset('philosophy', -1)" style="padding: 5px 15px;">&#10094; 이전</button>
+                    <div id="philosophy-chapter-grid" class="phil-chapter-grid" style="flex: 1; margin: 0 15px;">
+                        <!-- Buttons injected via JS -->
+                    </div>
+                    <button class="nav-btn" onclick="changeOffset('philosophy', 1)" style="padding: 5px 15px;">다음 &#10095;</button>
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color); text-align: center;">
+                    <button id="deleuze-toggle-btn" class="nav-btn" onclick="toggleDeleuzeOverview()" style="padding: 5px 15px; font-size: 0.9rem;">이 100개를 이해하는 가장 중요한 10단계 펼치기 ▼</button>
+                </div>
+                
+                <div id="deleuze-overview-content" class="deleuze-overview" style="display: none; margin-top: 15px;">
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: var(--text-color); margin-bottom: 10px;">이 100개를 이해하는 가장 중요한 10단계</h4>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">100개의 용어를 모두 따로 암기하기보다는 이 흐름을 잡는 것이 훨씬 중요합니다.</p>
+                        <ol style="color: var(--text-color); font-size: 0.95rem; line-height: 1.6; padding-left: 20px;">
+                            <li><strong>본질 → 관계</strong>: “이것은 무엇인가?”에서 “무엇과 연결되는가?”로.</li>
+                            <li><strong>동일성 → 차이</strong>: 차이가 동일한 것들 사이에서 생기는 것이 아니라 동일성이 차이에서 만들어진다.</li>
+                            <li><strong>존재 → 생성</strong>: 완성된 사물보다 만들어지는 과정을 본다.</li>
+                            <li><strong>주체 → 주체화 과정</strong>: ‘나’가 먼저 있는 것이 아니라 관계와 경험 속에서 ‘나’가 만들어진다.</li>
+                            <li><strong>결핍 → 욕망 생산</strong>: 욕망은 없는 것을 원하는 힘이 아니라 현실을 만들어내는 힘이다.</li>
+                            <li><strong>실체 → 배치</strong>: 사람이나 사물을 고립시켜 보지 않고 주변의 사물·언어·제도와 함께 본다.</li>
+                            <li><strong>나무 → 리좀</strong>: 중앙집권적 위계보다 횡적인 연결을 본다.</li>
+                            <li><strong>영토 → 탈영토화 → 재영토화</strong>: 안정된 구조와 변화가 반복된다.</li>
+                            <li><strong>현실 → 잠재성 + 현실성</strong>: 눈앞에 현실화된 것만이 실재의 전부가 아니다.</li>
+                            <li><strong>초월 → 내재성</strong>: 세계 밖의 절대적 기준보다 세계 내부의 관계와 생성에서 설명한다.</li>
+                        </ol>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">이 흐름을 기억하면 <strong>‘차이 → 반복 → 잠재성 → 사건 → 욕망 → 배치 → 리좀 → 생성 → 탈영토화 → 내재성’</strong>이 서로 별개의 난해한 용어가 아니라 하나의 철학적 프로젝트의 서로 다른 장면들이라는 것이 보이기 시작합니다.</p>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--text-color); margin-bottom: 10px;">핵심 1차 문헌</h4>
+                        <ul style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.5; padding-left: 20px; column-count: 2; column-gap: 20px;">
+                            <li>Deleuze, Empiricism and Subjectivity (1953)</li>
+                            <li>Deleuze, Nietzsche and Philosophy (1962)</li>
+                            <li>Deleuze, Proust and Signs (1964)</li>
+                            <li>Deleuze, Bergsonism (1966)</li>
+                            <li>Deleuze, Difference and Repetition (1968)</li>
+                            <li>Deleuze, Expressionism in Philosophy: Spinoza (1968)</li>
+                            <li>Deleuze, The Logic of Sense (1969)</li>
+                            <li>Deleuze & Guattari, Anti-Oedipus (1972)</li>
+                            <li>Deleuze & Guattari, Kafka: Toward a Minor Literature (1975)</li>
+                            <li>Deleuze & Guattari, A Thousand Plateaus (1980)</li>
+                            <li>Deleuze, Francis Bacon: The Logic of Sensation (1981)</li>
+                            <li>Deleuze, Cinema 1: The Movement-Image (1983)</li>
+                            <li>Deleuze, Cinema 2: The Time-Image (1985)</li>
+                            <li>Deleuze, Foucault (1986)</li>
+                            <li>Deleuze, The Fold: Leibniz and the Baroque (1988)</li>
+                            <li>Deleuze & Guattari, What Is Philosophy? (1991)</li>
+                            <li>Deleuze, “Immanence: A Life” (1995)</li>
+                        </ul>
+                        <div style="margin-top: 15px; text-align: right; display: flex; flex-direction: column; gap: 8px;">
+                            <a href="https://iep.utm.edu/gilles-deleuze/" target="_blank" style="color: #63b3ed; text-decoration: none; font-size: 0.9rem;">📚 Internet Encyclopedia of Philosophy</a>
+                            <a href="https://plato.stanford.edu/archives/win2022/entries/deleuze/#toc" target="_blank" style="color: #63b3ed; text-decoration: none; font-size: 0.9rem;">📚 Stanford Encyclopedia of Philosophy</a>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -215,8 +271,8 @@
     </div>
 
     <!-- Data and Scripts -->
-    <script src="philosophy_data.js?v=20260918_01"></script>
+    <script src="philosophy_data.js?v=20260918_03"></script>
     <script src="iching_data.js?v=20260917_14"></script>
-    <script src="script.js?v=20260918_01"></script>
+    <script src="script.js?v=20260918_02"></script>
 </body>
 </html>

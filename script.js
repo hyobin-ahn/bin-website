@@ -807,12 +807,38 @@ function updateTodaySaju(offset) {
 }
 
 // --- 6. Today's Philosophy ---
+
+function toggleDeleuzeOverview() {
+    const content = document.getElementById('deleuze-overview-content');
+    const btn = document.getElementById('deleuze-toggle-btn');
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        btn.innerHTML = '이 100개를 이해하는 가장 중요한 10단계 접기 ▲';
+    } else {
+        content.style.display = 'none';
+        btn.innerHTML = '이 100개를 이해하는 가장 중요한 10단계 펼치기 ▼';
+    }
+}
+
 function initPhilosophy(forceIndex = null) {
     const container = document.getElementById('philosophy-content');
     const gridContainer = document.getElementById('philosophy-chapter-grid');
+    const selectEl = document.getElementById('philosophy-select');
+    
     if (typeof philosophyData === 'undefined' || philosophyData.length === 0) {
         if (container) container.innerHTML = '<div style="color:var(--text-secondary);">철학 데이터를 불러올 수 없습니다.</div>';
         return;
+    }
+
+    // 전처리: 각 항목의 chapter 추출 (제목의 대괄호 부분)
+    if (!philosophyData[0]._processed) {
+        philosophyData.forEach(item => {
+            const match = item.title.match(/^\[(.*?)\]/);
+            if (match) {
+                item.chapter = match[1];
+            }
+            item._processed = true;
+        });
     }
     
     // 1. Calculate today's default index
@@ -831,8 +857,21 @@ function initPhilosophy(forceIndex = null) {
     
     let index = offsets.philosophy;
 
+    // Populate select ONCE
+    if (selectEl && selectEl.options.length === 0) {
+        philosophyData.forEach((item, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            // 옵션 텍스트는 "[챕터] 1. 제목" 형식에서 챕터 제외하고 간략히
+            opt.textContent = `${idx + 1}. ${item.title.replace(/^\[.*?\]\s*/, '').substring(0, 25)}...`;
+            selectEl.appendChild(opt);
+        });
+        selectEl.style.display = 'inline-block';
+    }
+    if (selectEl) selectEl.value = index;
+
     // Generate chapter buttons ONCE
-    if (gridContainer && gridContainer.innerHTML.trim() === '') {
+    if (gridContainer && gridContainer.children.length === 0) {
         const chapters = [];
         const chapterIndices = {};
         philosophyData.forEach((item, idx) => {
@@ -845,7 +884,9 @@ function initPhilosophy(forceIndex = null) {
         chapters.forEach(chap => {
             const btn = document.createElement('button');
             btn.className = 'phil-chapter-btn';
-            btn.textContent = chap.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim();
+            let shortChap = chap.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim();
+            if (shortChap.startsWith("들뢰즈 철학의 ")) shortChap = shortChap.replace("들뢰즈 철학의 ", "");
+            btn.textContent = shortChap;
             btn.onclick = () => {
                 offsets.philosophy = chapterIndices[chap];
                 initPhilosophy();
@@ -853,10 +894,6 @@ function initPhilosophy(forceIndex = null) {
             gridContainer.appendChild(btn);
         });
     }
-
-    // Hide old select if it still exists
-    const selectEl = document.getElementById('philosophy-select');
-    if (selectEl) selectEl.style.display = 'none';
 
     // Update UI label
     const dateEl = document.getElementById('philosophy-date');
@@ -873,10 +910,12 @@ function initPhilosophy(forceIndex = null) {
         ? `<div class="phil-source tts-ignore">📖 ${item.source}</div>`
         : '';
 
+    const displayTitle = item.title.replace(/^\[.*?\]\s*/, '');
+
     if (container) {
         container.innerHTML = `
             ${chapterBadge}
-            <div class="text-lg text-bold text-accent" style="margin: 10px 0 14px;">${item.title}</div>
+            <div class="text-lg text-bold text-accent" style="margin: 10px 0 14px;">${displayTitle}</div>
             <div class="philosophy-desc text-body">${item.content.replace(/\n/g, '<br>')}</div>
             ${sourceBadge}
         `;
@@ -885,7 +924,10 @@ function initPhilosophy(forceIndex = null) {
     // Highlight active button
     if (gridContainer) {
         gridContainer.querySelectorAll('.phil-chapter-btn').forEach(btn => {
-            if (item.chapter && btn.textContent === item.chapter.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim()) {
+            let shortChap = item.chapter ? item.chapter.replace(/^[0-9A-ZIVX]+\.\s*/, '').replace(/^[①-⑳]\s*/, '').trim() : '';
+            if (shortChap.startsWith("들뢰즈 철학의 ")) shortChap = shortChap.replace("들뢰즈 철학의 ", "");
+            
+            if (item.chapter && btn.textContent === shortChap) {
                 btn.classList.add('active');
             } else {
                 btn.classList.remove('active');
