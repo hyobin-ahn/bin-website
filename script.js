@@ -236,7 +236,7 @@ async function initCalendar() {
     let errorHtml = '';
 
     try {
-        const response = await fetch('hb1392@gmail.com.ics');
+        const response = await fetch('/api/calendar');
         if (!response.ok) {
             throw new Error(`HTTP fetch 실패 (상태 코드: ${response.status}) - 로컬 서버 환경인지 확인해주세요.`);
         }
@@ -287,7 +287,7 @@ async function initCalendar() {
                                 endJS = nextEnd.toJSDate();
                             }
                             
-                            if (startJS >= todayStart && startJS < endOfNextWeek) {
+                            if (startJS < endOfNextWeek && (endJS === null || endJS >= startOfWeek)) {
                                 upcomingEvents.push({ summary: event.summary, start: startJS, end: endJS, isAllDay: event.startDate.isDate });
                             }
                         }
@@ -298,8 +298,16 @@ async function initCalendar() {
                     const start = event.startDate;
                     if (start) {
                         const startJS = start.toJSDate();
-                        const endJS = event.endDate ? event.endDate.toJSDate() : null;
-                        if (startJS >= todayStart && startJS < endOfNextWeek) {
+                        let endJS = null;
+                        if (event.endDate) {
+                            endJS = event.endDate.toJSDate();
+                        } else if (event.duration) {
+                            const end = start.clone();
+                            end.addDuration(event.duration);
+                            endJS = end.toJSDate();
+                        }
+                        
+                        if (startJS < endOfNextWeek && (endJS === null || endJS >= startOfWeek)) {
                             upcomingEvents.push({ summary: event.summary, start: startJS, end: endJS, isAllDay: start.isDate });
                         }
                     }
@@ -353,7 +361,11 @@ async function initCalendar() {
                 }
             }
             
-            upcomingEvents = allEvents.filter(e => e.start && e.start >= todayStart && e.start < endOfNextWeek);
+            upcomingEvents = allEvents.filter(e => {
+                if (!e.start || e.start >= endOfNextWeek) return false;
+                const end = e.end || e.start;
+                return end >= startOfWeek;
+            });
             displayEvents = upcomingEvents;
             displayEvents.sort((a, b) => a.start - b.start);
         }
@@ -493,25 +505,169 @@ function initIChing(offset = 0) {
             </span>
             <span class="iching-hexagram-name">${hexagram.name_korean}(${hexagram.name_chinese})</span>
         </div>
-        <div class="iching-text">
+        <div id="iching-ai-container" style="text-align: center; margin: 15px 0;">
+            <button id="iching-ai-btn" class="nav-btn" onclick="fetchIchingAI(${index})" style="background: var(--primary); padding: 8px 15px; border-radius: 8px; width: 100%;">✨ AI 학자별 심층 해설 불러오기</button>
+        </div>
+        <div id="iching-ai-result" style="display: none;"></div>
+        <div class="iching-text" id="iching-original-text">
             ${hexagram.description ? `<p class="text-body"><span class="label-badge" >설명</span> ${hexagram.description.replace(/\n/g, '<br>')}</p>` : ''}
-            <div class="iching-box">
-                <p class="iching-box-title"><strong>卦辭</strong></p>
+            <div class="iching-box" id="iching-base-gwaesa">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <p class="iching-box-title" style="margin: 0;"><strong>卦辭</strong></p>
+                    <div style="display: flex; gap: 5px; align-items: center;" class="tts-ignore">
+                        <button class="tts-speed-btn" onclick="toggleTTSSpeed()" title="속도 조절 (현재 1.0x)" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">1.0x</button>
+                        <button class="tts-btn" onclick="toggleTTS('iching-base-gwaesa')" id="tts-btn-iching-base-gwaesa" title="읽기/정지" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">🔊</button>
+                    </div>
+                </div>
                 <p class="iching-box-text">${hexagram.gwaesa_chinese}</p>
                 <p class="text-body">${hexagram.gwaesa_korean}</p>
             </div>
             <div class="iching-box">
                 <p class="iching-box-title"><strong>爻辭</strong></p>
-                ${hexagram.lines ? hexagram.lines.map(l => `<div class="iching-line-item">
-                    <span class="iching-line-name">[${l.name}]</span><br>
-                    <div class="iching-line-text">${l.text_chinese}</div>
-                    <div class="text-body">${l.text_korean}</div>
-                </div>`).join('') : ''}
+                ${hexagram.lines ? hexagram.lines.map((l, idx) => {
+                    const ttsId = `iching-base-yaosa-${idx}`;
+                    return `<div class="iching-line-item" id="${ttsId}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span class="iching-line-name" style="font-weight: bold; color: var(--primary);">[${l.name}]</span>
+                            <div style="display: flex; gap: 5px; align-items: center;" class="tts-ignore">
+                                <button class="tts-speed-btn" onclick="toggleTTSSpeed()" title="속도 조절 (현재 1.0x)" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">1.0x</button>
+                                <button class="tts-btn" onclick="toggleTTS('${ttsId}')" id="tts-btn-${ttsId}" title="읽기/정지" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">🔊</button>
+                            </div>
+                        </div>
+                        <div class="iching-line-text">${l.text_chinese}</div>
+                        <div class="text-body">${l.text_korean}</div>
+                    </div>`;
+                }).join('') : ''}
             </div>
         </div>
     `;
     
     container.innerHTML = html;
+}
+
+window.fetchIchingAI = async function(index) {
+    const btn = document.getElementById('iching-ai-btn');
+    if (!btn) return;
+    
+    btn.disabled = true;
+    btn.textContent = '학자들의 견해를 종합하는 중... (약 10초 소요)';
+    
+    const hexagram = ichingData[index];
+    let hexagram_text = `[괘사]\n${hexagram.gwaesa_chinese}\n\n[효사]\n`;
+    if (hexagram.lines) {
+        hexagram_text += hexagram.lines.map(l => `(${l.name}) ${l.text_chinese}`).join('\n');
+    }
+    
+    try {
+        const response = await fetch('/api/iching', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: hexagram.name_korean + '(' + hexagram.name_chinese + ')',
+                text: hexagram_text
+            })
+        });
+        
+        if (!response.ok) throw new Error('API 요청 실패');
+        const data = await response.json();
+        
+        const origEl = document.getElementById('iching-original-text');
+        if (origEl) origEl.style.display = 'none';
+
+        let html = `
+            <div class="iching-text" style="background: var(--bg-1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h4 style="margin: 0; color: var(--primary); font-size: 1.2em;">✨ ${hexagram.name_korean} AI 심층 해설</h4>
+                    <div>
+                        <button class="tts-speed-btn" onclick="changeTTSSpeed()" title="읽기 속도 조절" style="font-size: 0.9em; padding: 5px 10px; border-radius: 5px; background: transparent; color: var(--text-primary); border: 1px solid var(--border); margin-right: 5px;">1.00x</button>
+                        <button class="tts-btn" onclick="toggleTTS('iching-ai-text')" id="tts-btn-iching-ai-text" title="전체 읽기/정지" style="font-size: 0.9em; padding: 5px 10px; border-radius: 5px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">🔊</button>
+                        <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-iching-ai-text" title="일시정지/재개" style="display: none; font-size: 0.9em; padding: 5px 10px; border-radius: 5px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">⏸️</button>
+                    </div>
+                </div>
+                <div id="iching-ai-text-content">
+        `;
+        
+        if (hexagram.description) {
+            html += `<p class="text-body">${hexagram.description.replace(/\n/g, '<br>')}</p>`;
+        }
+
+        const renderScholars = (item) => {
+            if (!item) return '';
+            return `
+                <div style="margin-top: 15px; background: var(--bg-2); padding: 10px; border-radius: 8px;">
+                    <div style="border-bottom: 2px solid var(--primary); padding-bottom: 5px; margin-bottom: 10px;">
+                        <h5 style="margin: 0; color: var(--text-primary);">[${item.title}] 주석</h5>
+                    </div>
+                    <div class="saju-box"><p class="saju-box-title">왕필</p><p>${item.wangbi || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">공영달</p><p>${item.kongyingda || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">소식</p><p>${item.sushi || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">정이</p><p>${item.chengyi || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">주희</p><p>${item.zhuxi || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">쌍호호씨</p><p>${item.shuanghu || ''}</p></div>
+                    <div class="saju-box"><p class="saju-box-title">운봉호씨</p><p>${item.yunfeng || ''}</p></div>
+                </div>
+            `;
+        };
+
+        const gwaesaAi = Array.isArray(data) ? data[0] : null;
+        
+        html += `
+            <div class="iching-box" id="iching-ai-gwaesa">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <p class="iching-box-title" style="margin: 0;"><strong>卦辭</strong></p>
+                    <div>
+                        <button class="tts-speed-btn" onclick="changeTTSSpeed()" title="읽기 속도 조절" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border); margin-right: 3px;">1.00x</button>
+                        <button class="tts-btn" onclick="toggleTTS('iching-ai-gwaesa')" id="tts-btn-iching-ai-gwaesa" title="읽기/정지" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">🔊</button>
+                        <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-iching-ai-gwaesa" title="일시정지/재개" style="display: none; font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">⏸️</button>
+                    </div>
+                </div>
+                <p class="iching-box-text" style="font-size: 1.3em; font-weight: bold; line-height: 1.5;">${hexagram.gwaesa_chinese}</p>
+                <p class="text-body">${hexagram.gwaesa_korean}</p>
+                ${renderScholars(gwaesaAi)}
+            </div>
+            <div class="iching-box">
+                <p class="iching-box-title"><strong>爻辭</strong></p>
+        `;
+
+        if (hexagram.lines) {
+            hexagram.lines.forEach((l, idx) => {
+                const yaosaAi = Array.isArray(data) && data.length > idx + 1 ? data[idx + 1] : null;
+                const ttsId = `iching-ai-yaosa-${idx}`;
+                html += `
+                    <div class="iching-line-item" style="margin-bottom: 20px;" id="${ttsId}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <span class="iching-line-name" style="margin: 0;">[${l.name}]</span>
+                            <div>
+                                <button class="tts-speed-btn" onclick="changeTTSSpeed()" title="읽기 속도 조절" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border); margin-right: 3px;">1.00x</button>
+                                <button class="tts-btn" onclick="toggleTTS('${ttsId}')" id="tts-btn-${ttsId}" title="읽기/정지" style="font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">🔊</button>
+                                <button class="tts-btn" onclick="pauseTTS()" id="tts-pause-${ttsId}" title="일시정지/재개" style="display: none; font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: transparent; color: var(--text-primary); border: 1px solid var(--border);">⏸️</button>
+                            </div>
+                        </div>
+                        <div class="iching-line-text" style="font-size: 1.3em; font-weight: bold; line-height: 1.5;">${l.text_chinese}</div>
+                        <div class="text-body">${l.text_korean}</div>
+                        ${renderScholars(yaosaAi)}
+                    </div>
+                `;
+            });
+        }
+        
+        html += `
+                </div>
+                </div>
+            </div>
+        `;
+        
+        const resultContainer = document.getElementById('iching-ai-result');
+        resultContainer.innerHTML = html;
+        resultContainer.style.display = 'block';
+        
+        btn.style.display = 'none';
+    } catch (e) {
+        console.error(e);
+        btn.disabled = false;
+        btn.textContent = '✨ AI 학자별 심층 해설 불러오기 (실패, 재시도)';
+        alert('AI 해설을 불러오는 중 오류가 발생했습니다.');
+    }
 }
 
 // --- 4. Today's Saju (Fortune) ---
@@ -1283,20 +1439,17 @@ window.toggleTTS = function(section) {
     if (contentEl) {
         const clone = contentEl.cloneNode(true);
         // 배지나 불필요한 라벨, 버튼, 네비게이션 날짜 제거
-        const ignores = clone.querySelectorAll('.label-badge, .tts-ignore, button, select, input, .nav-date');
+        const ignores = clone.querySelectorAll('.label-badge, .tts-ignore, button, select, input, .nav-date, .tts-speed-btn');
         ignores.forEach(b => b.remove());
         
-        // 화면에 보이지 않는 요소(display:none)의 innerText를 제대로 가져오기 위해
-        // 임시로 body에 보이게 추가한 뒤 텍스트를 추출합니다.
-        clone.style.display = 'block';
-        clone.style.position = 'absolute';
-        clone.style.left = '-9999px';
-        clone.style.visibility = 'hidden';
-        document.body.appendChild(clone);
+        // 블록 요소(문단, 제목 등)가 끝날 때 마침표와 공백을 추가하여 TTS가 자연스럽게 띄어 읽도록 유도
+        let htmlStr = clone.innerHTML;
+        htmlStr = htmlStr.replace(/<\/p>/gi, '. </p>');
+        htmlStr = htmlStr.replace(/<\/h[1-6]>/gi, '. </h5>'); // Replace with a generic closing tag just in case
+        htmlStr = htmlStr.replace(/<br\s*\/?>/gi, '. ');
+        clone.innerHTML = htmlStr;
         
-        textToRead = clone.innerText;
-        
-        document.body.removeChild(clone);
+        textToRead = clone.textContent || '';
         
         if (section === 'saju_analysis') {
             const part1Start = textToRead.indexOf("오행 정밀 분석");
@@ -1315,6 +1468,10 @@ window.toggleTTS = function(section) {
         
         // 이모지 및 특수 기호 완벽 제거
         textToRead = textToRead.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '');
+        
+        // 한문 원문에서 마침표/쉼표를 무시하고 연달아 읽는 현상 방지 (강제 줄바꿈 삽입)
+        textToRead = textToRead.replace(/([一-龥]),\s*/g, '$1\n');
+        textToRead = textToRead.replace(/([一-龥])\.\s*/g, '$1\n\n');
     }
     
     if (!textToRead.trim()) return;
