@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing name or text parameter in JSON body' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not set in environment variables' });
   }
@@ -29,6 +29,9 @@ ${text}
 5. 주희 (Zhu Xi)
 6. 쌍호호씨 (Shuanghu Hu Shi)
 7. 운봉호씨 (Yunfeng Hu Shi)
+
+모든 주석의 문장 끝은 반드시 '~이다', '~한다', '~다'와 같은 평어체(해라체)로 번역하세요. '~습니다', '~합니다'와 같은 존댓말은 절대 사용하지 마세요.
+또한, 주석가의 원문을 임의로 의역하거나 풀어서 설명하지 말고, 최대한 원문의 형태와 뉘앙스를 살려 직역(literal translation)에 가깝게 번역하세요.
 
 반드시 다음 JSON 배열(Array) 형식으로만 반환하세요:
 [
@@ -52,13 +55,12 @@ ${text}
     "shuanghu": "...",
     "yunfeng": "..."
   }
-  // ... 나머지 2효~상효까지 순차적으로 객체 추가 (총 7개의 객체: 괘사 1개 + 효사 6개)
 ]
 결과는 오직 유효한 JSON 배열 형식으로만 반환해야 합니다. 마크다운 블록(\`\`\`json) 없이 순수 JSON 문자열만 반환하거나 마크다운 블록을 사용해도 파싱할 수 있게 해주세요. 다른 말은 덧붙이지 마세요.
 `;
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
     
     let response;
     let data;
