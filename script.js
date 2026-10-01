@@ -287,7 +287,7 @@ async function initCalendar() {
                                 endJS = nextEnd.toJSDate();
                             }
                             
-                            if (startJS < endOfNextWeek && (endJS === null || endJS >= startOfWeek)) {
+                            if (startJS < endOfNextWeek && (endJS === null || endJS >= todayStart)) {
                                 upcomingEvents.push({ summary: event.summary, start: startJS, end: endJS, isAllDay: event.startDate.isDate });
                             }
                         }
@@ -307,7 +307,7 @@ async function initCalendar() {
                             endJS = end.toJSDate();
                         }
                         
-                        if (startJS < endOfNextWeek && (endJS === null || endJS >= startOfWeek)) {
+                        if (startJS < endOfNextWeek && (endJS === null || endJS >= todayStart)) {
                             upcomingEvents.push({ summary: event.summary, start: startJS, end: endJS, isAllDay: start.isDate });
                         }
                     }
@@ -364,7 +364,7 @@ async function initCalendar() {
             upcomingEvents = allEvents.filter(e => {
                 if (!e.start || e.start >= endOfNextWeek) return false;
                 const end = e.end || e.start;
-                return end >= startOfWeek;
+                return end >= todayStart;
             });
             displayEvents = upcomingEvents;
             displayEvents.sort((a, b) => a.start - b.start);
@@ -491,7 +491,7 @@ function initIChing(offset = 0) {
     // Update UI label
     const dateEl = document.getElementById('iching-date');
     if (dateEl) {
-        dateEl.textContent = index === 0 ? '오늘' : `${index + 1}`;
+        dateEl.textContent = offset === 0 ? '오늘' : `${index + 1}`;
     }
     
     if (selectEl) selectEl.value = index;
@@ -1018,8 +1018,8 @@ function initPhilosophy(forceIndex = null) {
         philosophyData.forEach((item, idx) => {
             const opt = document.createElement('option');
             opt.value = idx;
-            // 옵션 텍스트는 "[챕터] 1. 제목" 형식에서 챕터 제외하고 간략히
-            opt.textContent = `${idx + 1}. ${item.title.replace(/^\[.*?\]\s*/, '').substring(0, 25)}...`;
+            // 옵션 텍스트는 "[챕터] 1. 제목" 형식에서 챕터와 숫자 제외하고 간략히
+            opt.textContent = `${idx + 1}. ${item.title.replace(/^(?:\[.*?\]\s*)?(?:\d+\.\s*)?/, '').substring(0, 25)}...`;
             selectEl.appendChild(opt);
         });
         selectEl.style.display = 'inline-block';
