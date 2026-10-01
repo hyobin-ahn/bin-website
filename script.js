@@ -589,7 +589,10 @@ window.fetchIchingSectionAI = async function(index, lineIndex, btnEl) {
             })
         });
         
-        if (!response.ok) throw new Error('API 요청 실패');
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'API 요청 실패');
+        }
         const jsonResponse = await response.json();
         const item = Array.isArray(jsonResponse) ? jsonResponse[0] : jsonResponse;
         
