@@ -74,6 +74,11 @@ ${text}
         break;
       }
 
+      if (response.status === 429) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || '구글 AI 무료 사용량 제한(1분당 20회)을 초과했습니다. 잠시 후 다시 시도해주세요.');
+      }
+
       if (attempt === 2) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
