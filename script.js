@@ -320,7 +320,8 @@ async function initCalendar() {
             console.warn('ical.js 파싱 실패, 커스텀 파서로 폴백합니다.', icalError);
             let errorMessage = icalError.message || String(icalError);
             
-            errorHtml = `<div class="calendar-error">⚠️ ical.js 오류: ${errorMessage} (기본 파서로 전환됨)</div>`;
+            // errorHtml = `<div class="calendar-error">⚠️ ical.js 오류: ${errorMessage} (기본 파서로 전환됨)</div>`;
+            errorHtml = ''; // 폴백이 잘 작동하므로 사용자에게는 에러를 숨김
             
             // 기존 커스텀 파서 (fallback)
             const lines = icsText.split(/\r?\n/);
