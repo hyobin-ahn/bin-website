@@ -621,7 +621,7 @@ window.fetchIchingSectionAI = async function(index, lineIndex, btnEl) {
         console.error(e);
         btnEl.disabled = false;
         btnEl.textContent = '해설 실패 (재시도)';
-        alert('AI 해설을 불러오는 중 오류가 발생했습니다.');
+        alert(e.message || 'AI 해설을 불러오는 중 오류가 발생했습니다.');
     }
 }
 
