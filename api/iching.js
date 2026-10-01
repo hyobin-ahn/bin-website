@@ -58,29 +58,37 @@ ${text}
 `;
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
     
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0.7
-        }
-      })
-    });
+    let response;
+    let data;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            temperature: 0.7
+          }
+        })
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
+      if (response.ok) {
+        data = await response.json();
+        break;
+      }
+
+      if (attempt === 2) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
+      }
+      await new Promise(r => setTimeout(r, 1500));
     }
-
-    const data = await response.json();
     let responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     if (responseText.startsWith('```json')) {
