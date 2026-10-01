@@ -50,41 +50,22 @@ ${text}
 
   try {
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
-    
-    let response;
-    let data;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      response = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }],
-          generationConfig: {
-            temperature: 0.4
-          }
-        })
-      });
 
-      if (response.ok) {
-        data = await response.json();
-        break;
-      }
+    const response = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.4 }
+      })
+    });
 
-      if (response.status === 429) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || '구글 AI 무료 사용량 제한(1분당 20회)을 초과했습니다. 잠시 후 다시 시도해주세요.');
-      }
-
-      if (attempt === 2) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
-      }
-      await new Promise(r => setTimeout(r, 1500));
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `Gemini API error: ${response.status}`);
     }
+
+    const data = await response.json();
     let responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     if (responseText.startsWith('```json')) {
