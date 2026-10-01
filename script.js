@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initIChing();
     initSaju();
     initPhilosophy();
+    initShortcuts();
 });
 
 async function updateAllCharts(period) {
@@ -1529,3 +1530,153 @@ window.pauseTTS = function() {
         }
     }
 };
+
+// --- Shortcuts Management ---
+const DEFAULT_SHORTCUTS = [
+    { name: "채팅", url: "https://chat.openai.com", icon: "https://upload.wikimedia.org/wikipedia/commons/0/04/ChatGPT_logo.svg" },
+    { name: "Microsoft 365", url: "https://www.office.com", icon: "https://upload.wikimedia.org/wikipedia/commons/5/5f/Microsoft_Office_logo_%282019%E2%80%93present%29.svg" },
+    { name: "YouTube", url: "https://www.youtube.com", icon: "https://upload.wikimedia.org/wikipedia/commons/0/09/YouTube_full-color_icon_%282017%29.svg" }
+];
+
+window.shortcutEditIndex = -1;
+
+function initShortcuts() {
+    renderShortcuts();
+    
+    // Setup modal event listeners
+    const modal = document.getElementById('shortcut-modal');
+    const title = document.getElementById('shortcut-modal-title');
+    const cancelBtn = document.getElementById('shortcut-cancel-btn');
+    const saveBtn = document.getElementById('shortcut-save-btn');
+    const deleteBtn = document.getElementById('shortcut-delete-btn');
+    const nameInput = document.getElementById('shortcut-name-input');
+    const urlInput = document.getElementById('shortcut-url-input');
+
+    if (!modal) return;
+
+    window.closeShortcutModal = function() {
+        modal.style.display = 'none';
+        nameInput.value = '';
+        urlInput.value = '';
+        window.shortcutEditIndex = -1;
+    }
+
+    cancelBtn.onclick = window.closeShortcutModal;
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) window.closeShortcutModal();
+    });
+
+    deleteBtn.onclick = () => {
+        if (window.shortcutEditIndex >= 0) {
+            if(confirm('이 바로가기를 삭제하시겠습니까?')) {
+                let shortcuts = JSON.parse(localStorage.getItem('my_shortcuts')) || DEFAULT_SHORTCUTS;
+                shortcuts.splice(window.shortcutEditIndex, 1);
+                localStorage.setItem('my_shortcuts', JSON.stringify(shortcuts));
+                renderShortcuts();
+                window.closeShortcutModal();
+            }
+        }
+    };
+
+    saveBtn.onclick = () => {
+        const name = nameInput.value.trim();
+        let url = urlInput.value.trim();
+        
+        if (!name || !url) {
+            alert('이름과 URL을 모두 입력해주세요.');
+            return;
+        }
+        
+        if (!url.startsWith('http')) {
+            url = 'https://' + url;
+        }
+        
+        try {
+            const domain = new URL(url).hostname;
+            const icon = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+            
+            let shortcuts = JSON.parse(localStorage.getItem('my_shortcuts')) || DEFAULT_SHORTCUTS;
+            
+            if (window.shortcutEditIndex >= 0) {
+                // Edit
+                shortcuts[window.shortcutEditIndex] = { name, url, icon };
+            } else {
+                // Add
+                shortcuts.push({ name, url, icon });
+            }
+            
+            localStorage.setItem('my_shortcuts', JSON.stringify(shortcuts));
+            
+            renderShortcuts();
+            window.closeShortcutModal();
+        } catch (e) {
+            alert('올바른 URL 형식이 아닙니다.');
+        }
+    };
+}
+
+function renderShortcuts() {
+    const container = document.getElementById('shortcuts-container');
+    if (!container) return;
+    
+    let shortcuts = JSON.parse(localStorage.getItem('my_shortcuts'));
+    if (!shortcuts) {
+        shortcuts = DEFAULT_SHORTCUTS;
+        localStorage.setItem('my_shortcuts', JSON.stringify(shortcuts));
+    }
+    
+    container.innerHTML = '';
+    
+    shortcuts.forEach((sc, index) => {
+        const a = document.createElement('a');
+        a.href = sc.url;
+        a.className = 'shortcut-item';
+        a.target = '_blank';
+        a.title = sc.name + ' (우클릭하여 편집)';
+        
+        // Right click to edit
+        a.oncontextmenu = (e) => {
+            e.preventDefault();
+            window.shortcutEditIndex = index;
+            const modal = document.getElementById('shortcut-modal');
+            if (modal) {
+                document.getElementById('shortcut-modal-title').textContent = '바로가기 편집';
+                document.getElementById('shortcut-name-input').value = sc.name;
+                document.getElementById('shortcut-url-input').value = sc.url;
+                document.getElementById('shortcut-delete-btn').style.display = 'block';
+                modal.style.display = 'flex';
+                document.getElementById('shortcut-name-input').focus();
+            }
+        };
+        
+        a.innerHTML = `
+            <div class="shortcut-icon">
+                <img src="${sc.icon}" class="shortcut-favicon" alt="${sc.name}" onerror="this.outerHTML='<div class=\\'fallback-icon\\'>${sc.name.charAt(0)}</div>'">
+            </div>
+            <span class="shortcut-label">${sc.name}</span>
+        `;
+        container.appendChild(a);
+    });
+    
+    const addBtn = document.createElement('div');
+    addBtn.className = 'shortcut-item add-shortcut';
+    addBtn.title = '새 바로가기 추가';
+    addBtn.onclick = () => {
+        window.shortcutEditIndex = -1;
+        const modal = document.getElementById('shortcut-modal');
+        if (modal) {
+            document.getElementById('shortcut-modal-title').textContent = '바로가기 추가';
+            document.getElementById('shortcut-delete-btn').style.display = 'none';
+            modal.style.display = 'flex';
+            document.getElementById('shortcut-name-input').focus();
+        }
+    };
+    addBtn.innerHTML = `
+        <div class="shortcut-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        </div>
+        <span class="shortcut-label">추가</span>
+    `;
+    container.appendChild(addBtn);
+}

@@ -99,7 +99,178 @@
                         </button>
                     </div>
                 </form>
-                </form>
+                
+                <div id="shortcuts-container" class="shortcuts-row"></div>
+            </div>
+
+            <style>
+            /* ── Shortcuts Row ──────────────────────────────────────── */
+            .shortcuts-row {
+              display: flex;
+              gap: 24px;
+              margin-top: 15px;
+              justify-content: center;
+              flex-wrap: wrap;
+            }
+            .shortcut-item {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 8px;
+              text-decoration: none;
+              cursor: pointer;
+              transition: transform 0.2s ease;
+            }
+            .shortcut-item:hover {
+              transform: translateY(-3px);
+            }
+            .shortcut-icon {
+              width: 52px;
+              height: 52px;
+              background-color: rgba(255, 255, 255, 0.08);
+              border-radius: 14px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              backdrop-filter: blur(5px);
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              transition: background-color 0.2s ease, box-shadow 0.2s ease;
+            }
+            .shortcut-item:hover .shortcut-icon {
+              background-color: rgba(255, 255, 255, 0.15);
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }
+            .shortcut-icon img, .shortcut-icon svg {
+              width: 28px;
+              height: 28px;
+              object-fit: contain;
+            }
+            .shortcut-icon img.shortcut-favicon {
+              width: 32px;
+              height: 32px;
+              border-radius: 4px;
+            }
+            .shortcut-label {
+              color: var(--text-primary);
+              font-size: 0.85rem;
+              font-weight: 500;
+              text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+            }
+            .add-shortcut .shortcut-icon svg {
+              fill: var(--text-primary);
+              opacity: 0.8;
+            }
+            .add-shortcut:hover .shortcut-icon svg {
+              opacity: 1;
+            }
+            .fallback-icon {
+              font-size: 20px;
+              font-weight: bold;
+              color: #fff;
+              text-transform: uppercase;
+            }
+            
+            /* ── Shortcut Modal ─────────────────────────────────────── */
+            .modal-overlay {
+              position: fixed;
+              top: 0; left: 0; right: 0; bottom: 0;
+              background: rgba(0, 0, 0, 0.6);
+              backdrop-filter: blur(4px);
+              display: none;
+              justify-content: center;
+              align-items: center;
+              z-index: 9999;
+            }
+            .shortcut-modal-content {
+              background: var(--surface);
+              border: 1px solid var(--border);
+              border-radius: var(--r-md);
+              padding: 24px;
+              width: 320px;
+              box-shadow: var(--shadow-lg);
+            }
+            .shortcut-modal-content h3 {
+              color: var(--text-primary);
+              margin-bottom: 20px;
+              font-size: 1.1rem;
+              text-align: center;
+            }
+            .shortcut-modal-content .input-group {
+              margin-bottom: 16px;
+            }
+            .shortcut-modal-content label {
+              display: block;
+              color: var(--text-secondary);
+              font-size: 0.85rem;
+              margin-bottom: 6px;
+            }
+            .shortcut-modal-content input {
+              width: 100%;
+              background: var(--bg);
+              border: 1px solid var(--border);
+              color: var(--text-primary);
+              padding: 10px 12px;
+              border-radius: 8px;
+              outline: none;
+              font-family: inherit;
+            }
+            .shortcut-modal-content input:focus {
+              border-color: var(--accent);
+            }
+            .shortcut-modal-content .modal-buttons {
+              display: flex;
+              justify-content: flex-end;
+              gap: 10px;
+              margin-top: 24px;
+            }
+            .btn-secondary {
+              background: transparent;
+              color: var(--text-secondary);
+              border: 1px solid var(--text-secondary);
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-family: inherit;
+              transition: all 0.2s ease;
+            }
+            .btn-secondary:hover {
+              background: rgba(255,255,255,0.1);
+              color: var(--text-primary);
+            }
+            .btn-danger {
+              background: rgba(248, 113, 113, 0.1);
+              color: var(--red);
+              border: 1px solid var(--red);
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-family: inherit;
+              transition: all 0.2s ease;
+            }
+            .btn-danger:hover {
+              background: var(--red);
+              color: #fff;
+            }
+            </style>
+
+            <!-- Shortcut Modal Structure -->
+            <div id="shortcut-modal" class="modal-overlay">
+                <div class="shortcut-modal-content">
+                    <h3 id="shortcut-modal-title">바로가기 추가</h3>
+                    <div class="input-group">
+                        <label>이름</label>
+                        <input type="text" id="shortcut-name-input" placeholder="예: 페이스북" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <label>URL</label>
+                        <input type="text" id="shortcut-url-input" placeholder="예: facebook.com" autocomplete="off">
+                    </div>
+                    <div class="modal-buttons">
+                        <button id="shortcut-delete-btn" class="btn-danger" style="display: none; margin-right: auto;">삭제</button>
+                        <button id="shortcut-cancel-btn" class="btn-secondary">취소</button>
+                        <button id="shortcut-save-btn" class="btn-primary">저장</button>
+                    </div>
+                </div>
             </div>
 
 
